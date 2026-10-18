@@ -357,7 +357,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_trace_id
 针对管理控制台的高频查询语句，通过复合索引实现高效的 `INDEX SCAN`，杜绝全表扫描（`TABLE SCAN`）：
 
 ```sql
--- 验证查询: 检索特定 Key 在过去 24 小时内的调用记录，按时间倒序取前 20 条
+-- 验证查询 1: 检索特定 Key 在过去 24 小时内的调用记录，按时间倒序取前 20 条
 EXPLAIN QUERY PLAN
 SELECT id, trace_id, model, http_status, total_tokens, request_duration_ms, created_at
 FROM audit_logs
@@ -367,6 +367,32 @@ LIMIT 20;
 
 -- 预期执行计划输出:
 -- SEARCH audit_logs USING INDEX idx_audit_logs_key_created (key_id=? AND created_at>?)
+
+-- 验证查询 2: 普通开发者检索个人调用明细与报错排查 (基于 user_id 过滤)
+EXPLAIN QUERY PLAN
+SELECT id, trace_id, model, http_status, total_tokens, request_duration_ms, created_at
+FROM audit_logs
+WHERE user_id = 'user_123456' AND created_at >= 1729200000000
+ORDER BY created_at DESC
+LIMIT 20;
+
+-- 预期执行计划输出:
+-- SEARCH audit_logs USING INDEX idx_audit_logs_user_created (user_id=? AND created_at>?)
+
+-- 验证查询 3: 个人用量大盘 - 聚合当前用户名下所有 Key 的本周 Token 累计消耗
+EXPLAIN QUERY PLAN
+SELECT 
+    sum(qu.prompt_tokens) AS total_prompt,
+    sum(qu.completion_tokens) AS total_completion,
+    sum(qu.total_tokens) AS total_tokens,
+    sum(qu.request_count) AS total_requests
+FROM quota_usages qu
+JOIN virtual_keys vk ON qu.key_id = vk.id
+WHERE vk.user_id = 'user_123456' AND qu.period_type = 'weekly' AND qu.period_start = '2026-W42';
+
+-- 预期执行计划输出:
+-- SEARCH vk USING INDEX idx_virtual_keys_user_id (user_id=?)
+-- SEARCH qu USING INDEX idx_quota_usages_lookup (key_id=? AND period_type=? AND period_start=?)
 ```
 
 ---

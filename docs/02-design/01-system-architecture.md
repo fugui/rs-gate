@@ -184,7 +184,7 @@ sequenceDiagram
     Guard ->> Guard: target_backend.active_conns.fetch_sub(1) (安全释放连接数)
 
     Note over Stream, DB: 阶段 6: 异步审计解耦与批量落盘
-    Stream ->> AuditChan: 投递 AuditEvent (KeyID, Model, Tokens, Latency, TTFT, TraceID)
+    Stream ->> AuditChan: 投递 AuditEvent (KeyID, UserID, Model, Tokens, Latency, TTFT, TraceID)
     Note over AuditChan: 非阻塞入队 (try_send / 有界队列背压隔离)
     
     rect rgb(245, 243, 255)
@@ -497,6 +497,7 @@ use std::sync::atomic::AtomicU64;
 #[derive(Debug, Clone)]
 pub struct VirtualKeyIdentity {
     pub key_id: String,
+    pub user_id: String, // 归属用户 ID (支持用户数据隔离与审计追踪)
     pub key_hash: String,
     pub name: String,
     pub allowed_models: Vec<String>,
@@ -585,6 +586,15 @@ pub trait StreamUsageParser: Send + Sync {
     /// 增量检测 chunk 文本，若包含 usage 则提取并返回
     fn extract_usage_from_chunk(&self, chunk: &[u8]) -> Option<TokenUsage>;
 }
+
+/// 控制台与自服务门户 JWT 鉴权声明
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserClaims {
+    pub sub: String,       // user_id
+    pub username: String,  // 用户登录名
+    pub role: String,      // 角色: "superadmin" | "admin" | "user"
+    pub exp: usize,        // 过期时间戳
+}
 ```
 
 ### 6.6 统一强类型错误体系 (GatewayError)
@@ -601,6 +611,9 @@ use thiserror::Error;
 pub enum GatewayError {
     #[error("CIDR access denied: {0}")]
     ForbiddenCidr(String),
+
+    #[error("Forbidden: insufficient permissions for role {0}")]
+    ForbiddenRole(String),
 
     #[error("Unauthorized: {0}")]
     Unauthorized(String),
@@ -643,6 +656,11 @@ impl IntoResponse for GatewayError {
     fn into_response(self) -> Response {
         let (status, err_type, message) = match self {
             GatewayError::ForbiddenCidr(msg) => (StatusCode::FORBIDDEN, "forbidden_cidr", msg),
+            GatewayError::ForbiddenRole(role) => (
+                StatusCode::FORBIDDEN,
+                "forbidden_role",
+                format!("Operation requires higher privileges (current role: {})", role),
+            ),
             GatewayError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, "invalid_api_key", msg),
             GatewayError::RpmLimitExceeded => (StatusCode::TOO_MANY_REQUESTS, "rpm_limit_exceeded", "Rate limit exceeded".to_string()),
             GatewayError::ConcurrencyLimitExceeded(max) => (
@@ -696,9 +714,9 @@ impl IntoResponse for GatewayError {
 
 ```mermaid
 graph TD
-    UserReq["客户端 HTTP GET 命中网关监听"] --> CheckPrefix{"请求路径前缀判断"}
+    UserReq["客户端 HTTP 请求命中网关监听"] --> CheckPrefix{"请求路径前缀判断"}
     CheckPrefix -->|"/v1/*"| ProxyAPI["进入网关代理中间件 & 转发引擎"]
-    CheckPrefix -->|"/api/admin/*"| AdminREST["进入控制台 REST API Handler"]
+    CheckPrefix -->|"/api/*"| WebREST["进入控制台与门户 REST API Handler<br>(/api/auth, /api/user, /api/admin)"]
     CheckPrefix -->|"/health/*"| HealthProbe["返回存活/就绪探针状态"]
     CheckPrefix -->|"/metrics"| Prometheus["暴露 Prometheus OpenMetrics"]
     CheckPrefix -->|"其他所有路径 /*"| EmbeddedStatic["静态资源服务中间件 (rust-embed)"]

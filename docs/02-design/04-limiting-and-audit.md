@@ -32,7 +32,7 @@ graph TD
     CacheLookup -->|"未命中"| DBLookup["查询 SQLite virtual_keys 表"]
     DBLookup -->|"Key 不存在或 is_active == 0"| Err401["401 Unauthorized (快速拦截)"]
     DBLookup -->|"查询成功"| LoadCache["回填内存缓存"]
-    CacheLookup -->|"命中"| KeyIdentity["获得 VirtualKeyIdentity"]
+    CacheLookup -->|"命中"| KeyIdentity["获得 VirtualKeyIdentity<br>(含 user_id/配额上限)"]
     LoadCache --> KeyIdentity
 
     KeyIdentity --> RPMCheck["4. 无锁原子令牌桶校验 (RPM Limit)"]
@@ -271,7 +271,7 @@ rs-gate 采用 **Tokio mpsc 有界通道 + 后台批量事务刷盘 Worker** 彻
 ```mermaid
 graph TD
     subgraph ProxyPath["代理中继热路径 (耗时 <= 0.02ms)"]
-        ReqFinish["请求结束 / SSE 传输完毕"] --> MakeEvent["组装 AuditEvent 数据结构<br>(Tokens/耗时/状态码/TraceID)"]
+        ReqFinish["请求结束 / SSE 传输完毕"] --> MakeEvent["组装 AuditEvent 数据结构<br>(Tokens/耗时/状态码/TraceID/UserID)"]
         MakeEvent --> TrySend{"投递至 Tokio mpsc 通道<br>(capacity = 10,000)"}
         TrySend -->|"通道未满 (正常)"| QuickReturn["立即返回客户端 (零阻塞)"]
         TrySend -->|"通道已满 (极端过载)"| Backpressure["背压机制: 触发告警指标<br>AuditQueueFull (丢弃日志保障中继)"]
