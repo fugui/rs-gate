@@ -14,7 +14,7 @@
 **rs-gate** 是一款采用 Rust 构建的高性能、低资源占用、单二进制交付的企业级内部大模型网关。它作为企业内部所有 AI 业务系统与后端高性能推理引擎（如 vLLM、SGLang、Triton、TEI、Ollama 等）及外部上游提供商之间的统一接入中枢与安全防线，解决企业大模型应用落地过程中的**凭据泄露风险**、**调用配额无序**、**异构请求并发倾斜雪崩**、**账单计量混乱**以及**运维部署沉重**等核心痛点。
 
 ### 1.2 核心价值主张 (Core Value Propositions)
-1. **多协议直通中继，零协议转换损耗 (Multi-Protocol Passthrough)**：支持 `/v1/chat/completions`、`/v1/completions`、`/v1/embeddings`、`/v1/rerank` 等多种协议端点。网关核心定位为**高性能透明中继器**而非重型转换器，对后端 vLLM/SGLang 实施原生协议直通透传，杜绝复杂跨协议 AST 转换带来的额外序列化与延迟开销。
+1. **多协议直通中继，零协议转换损耗 (Multi-Protocol Passthrough)**：支持 `/v1/chat/completions`、`/v1/responses`（OpenAI 新一代 Agentic Responses API）、`/v1/completions`、`/v1/embeddings`、`/v1/rerank` 等多种协议端点。网关核心定位为**高性能透明中继器**而非重型转换器，对后端 vLLM/SGLang 实施原生协议直通透传，杜绝复杂跨协议 AST 转换带来的额外序列化与延迟开销。
 2. **后端协议能力预先探测与界面展现 (Capability Probing & UI Visualization)**：在后端服务器添加或周期性巡检时，网关主动探测该后端节点实际支持的协议与端点类型，并在管理控制台 UI 上直观展示协议能力徽章与健康状态。
 3. **多模型后端集群与加权活跃连接轮询 (Weighted Least-Active-Connections)**：支持 DeepSeek、Qwen、GLM 等多主流模型聚合；单个逻辑模型可挂接多个物理后端服务器（Backend Instances）。针对大模型请求长短极其不均（短查询几十 Token vs 深度推理长连接数十秒）的特征，独创基于**当前活跃连接数与权重比值**的动态调度算法，杜绝 GPU 节点连接堆积与 KV Cache 耗尽雪崩。
 4. **两层配额防线 (日/周双层配额阻断，Daily & Weekly Quotas)**：针对企业应用提供**每日 (Daily)** 与**每周 (Weekly)** 两层 Token 配额双重保险，严格防范单日突发与单周累积滥用。
@@ -35,9 +35,9 @@
 
 | 编号 | 特性名称 | 优先级 | 功能描述与规范 | 验收指标 / 衡量标准 |
 | :--- | :--- | :---: | :--- | :--- |
-| **GW-01** | 多协议原生直通代理 (Passthrough) | **P0** | 原生直通支持主流大模型推理端点：`/v1/chat/completions`、`/v1/completions`、`/v1/embeddings`、`/v1/rerank` 与 `/v1/models`；网关仅做鉴权、流控、中继透传与计量，**严禁且不做昂贵的跨协议转换**。 | 1. 客户端通过标准协议发起 Chat、Embedding 或 Rerank 请求均能透传至后端。<br>2. 网关自身处理引入额外延迟 $P99 \le 1.5\text{ms}$。 |
+| **GW-01** | 多协议原生直通代理 (Passthrough) | **P0** | 原生直通支持主流大模型推理端点：`/v1/chat/completions`、`/v1/responses`（OpenAI 新一代 Responses API）、`/v1/completions`、`/v1/embeddings`、`/v1/rerank` 与 `/v1/models`；网关仅做鉴权、流控、中继透传与计量，**严禁且不做昂贵的跨协议转换**。 | 1. 客户端通过标准协议发起 Chat、Responses、Embedding 或 Rerank 请求均能透传至后端。<br>2. 网关自身处理引入额外延迟 $P99 \le 1.5\text{ms}$。 |
 | **GW-02** | SSE 低延迟非阻塞流式中继 | **P0** | 针对流式响应，采用异步管道边读边写，严禁中间全量缓冲，对 `data: {...}` 事件帧及 `data: [DONE]` 实施逐 Chunk 实时透传。 | 首字透传延迟 (TTFT Overhead) $\le 2\text{ms}$，端到端 Chunk 抖动 $< 1\text{ms}$。 |
-| **GW-03** | 后端协议能力预先探测 (Capability Probing) | **P0** | 当向系统添加后端服务器（如 vLLM/SGLang 实例）或执行健康探测时，网关主动预先探测该节点实际支持的协议类型与端点（Chat, Completion, Embedding, Rerank, Tokenize 等）。 | 1. 能够准确识别 vLLM/SGLang 暴露的服务能力清单。<br>2. 探测结果即时沉淀至内存状态并在前端界面呈现。 |
+| **GW-03** | 后端协议能力预先探测 (Capability Probing) | **P0** | 当向系统添加后端服务器（如 vLLM/SGLang 实例）或执行健康探测时，网关主动预先探测该节点实际支持的协议类型与端点（Chat, Responses, Completion, Embedding, Rerank, Tokenize 等）。 | 1. 能够准确识别 vLLM/SGLang 暴露的服务能力清单。<br>2. 探测结果即时沉淀至内存状态并在前端界面呈现。 |
 | **GW-04** | 多模型到后端服务器集群映射 | **P0** | 支持配置多种模型（如 DeepSeek、Qwen、GLM 等）；单个逻辑模型可挂载数个后端物理服务器实例（Backend Servers Pool），形成高可用实例组。 | 请求目标模型时，网关能准确定位其绑定的后端服务器集群并进行路由转发。 |
 | **GW-05** | 基于当前活跃连接数的加权轮询调度 | **P0** | 针对同一模型下的多个后端实例，调度算法**基于当前活跃连接数而非请求计数**进行加权调度。公式：优先选择 $\frac{\text{ActiveConnections}_i}{\text{Weight}_i}$ 最小的健康后端，相同值时加权平滑轮询。 | 1. 长推理请求（如 DeepSeek-R1 数万 Token）不会在单个节点过度堆积。<br>2. 节点活跃长连接与配置权重严格成正比。 |
 | **GW-06** | 流式 Token 实时提取与计量 | **P0** | 实时解析 SSE 尾部携带的 `usage` chunk（兼容 `stream_options.include_usage`），准确记录 Prompt 与 Completion Token 数并计入审计流水。 | 审计记录的 Token 消耗与推理引擎实际返回 100% 吻合。 |
@@ -69,7 +69,7 @@
 | 编号 | 特性名称 | 优先级 | 功能描述与规范 | 验收指标 / 衡量标准 |
 | :--- | :--- | :---: | :--- | :--- |
 | **ADM-01** | 前端产物单二进制内嵌 | **P0** | 管理控制台前端（HTML5/Modern CSS/SPA）构建静态资源直接通过 `rust-embed` 编译进可执行文件。 | 运行单个可执行二进制即可在浏览器直接访问管理后台 UI。 |
-| **ADM-02** | 后端服务器协议能力与健康度可视化看板 | **P0** | 在后端服务器管理界面直观展示各个节点（如 vLLM/SGLang 实例）的预探测协议徽章（🟢 Chat 🟢 Completions 🟢 Embeddings 🟢 Rerank 等）、健康状态与实时活跃连接数。 | 控制台清晰展示每个后端的协议能力矩阵、当前承载的活跃连接数及加权分配状态。 |
+| **ADM-02** | 后端服务器协议能力与健康度可视化看板 | **P0** | 在后端服务器管理界面直观展示各个节点（如 vLLM/SGLang 实例）的预探测协议徽章（🟢 Chat 🟢 Responses 🟢 Completions 🟢 Embeddings 🟢 Rerank 等）、健康状态与实时活跃连接数。 | 控制台清晰展示每个后端的协议能力矩阵、当前承载的活跃连接数及加权分配状态。 |
 | **ADM-03** | 多模型与后端集群关联可视化配置 | **P0** | 模型管理视图：维护逻辑模型（如 DeepSeek-R1、Qwen-2.5-72B、GLM-4），配置其绑定的后端服务器列表、各自权重及健康探活参数；支持热更新。 | 修改模型挂载节点与权重后无需重启服务，即时在内存中热生效。 |
 | **ADM-04** | 虚拟 API Key 全生命周期与日/周配额管理 | **P0** | Key 管理视图：创建 Key、配置归属、分配允许访问的模型清单、配置 RPM/并发上限、配置**每日与每周 Token 限额**；支持一键重置当前周期已用额度。 | 1. 密钥创建仅展示一次明文。<br>2. 界面直观呈现日/周双进度条及超额状态。 |
 | **ADM-05** | 审计日志检索与调用明细下钻 | **P0** | 日志视图：分页展示调用流水，支持按时间、Key、模型、协议类型、状态码、耗时进行组合筛选，可展开查看请求 Token 与耗时详情。 | 10 万级日志规模下分页查询响应时间 $\le 50\text{ms}$。 |
@@ -149,6 +149,7 @@
    - 后台健康检查探针按配置周期（如每 15 秒）在探活心跳中执行能力探测。
 2. **探测协议矩阵**：
    - **Chat 端点**：探活探测 `/v1/chat/completions`（通过轻量探测或预检）。
+   - **Responses 端点**：探活探测 `/v1/responses`（OpenAI 新一代 Agentic Responses API）。
    - **Completions 端点**：探活探测 `/v1/completions`。
    - **Embeddings 端点**：探活探测 `/v1/embeddings`。
    - **Rerank 端点**：探活探测 `/v1/rerank`。
@@ -194,7 +195,7 @@
 ## 6. 阶段一结论与后续演进衔接
 
 本特性清单与需求范围界定规范（`01-features.md`）已全面吸收反馈完成更新：
-1. **多协议直通**：支持 Chat、Completions、Embeddings、Rerank 等端点直通后端 vLLM/SGLang，不进行昂贵的跨协议转换；
+1. **多协议直通**：支持 Chat、Responses、Completions、Embeddings、Rerank 等端点直通后端 vLLM/SGLang，不进行昂贵的跨协议转换；
 2. **能力预探测与展示**：网关自动探测后端实际支持的协议类型并在控制台呈现徽章；
 3. **多模型后端集群与加权活跃连接调度**：支持 DeepSeek、Qwen、GLM 等多模型，采用加权最小活跃长连接轮询，解决大模型请求长短不均的倾斜问题；
 4. **两层配额防线**：正式确立日配额 (Daily) + 周配额 (Weekly) 严格限额与重置策略。
