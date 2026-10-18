@@ -28,7 +28,7 @@ rs-gate/
 
 ## 2. SDD 执行四大阶段
 
-### 阶段一：特性清单与边界明确 (`docs/01-features/01-features.md`)
+### 阶段一：特性清单与边界明确 (`docs/01-features/01-feature-matrix.md`)
 - 输出需求功能矩阵，划分为 **核心网关 (Gateway)**、**流控与安全 (Security & Limiting)**、**管理控制台 (Admin Web)**、**系统与审计 (Ops & Audit)** 四大领域。
 - 标明优先级（P0/P1/P2）并明确定义 **Non-Goals（本项目当前阶段不做的功能）**，严格控制系统边界。
 
@@ -51,5 +51,5 @@ rs-gate/
 
 ## 🎯 初始执行指令
 现在，请严格遵循上述规范，开始执行第一步：
-在 `docs/01-features/01-features.md` 中输出详尽的**特性清单矩阵与范围界定文档**供我审阅。
-在这一步，请不要创建任何业务代码，只产出 `docs/01-features/01-features.md`。
+在 `docs/01-features/01-feature-matrix.md` 中输出详尽的**特性清单矩阵与范围界定文档**供我审阅。
+在这一步，请不要创建任何业务代码，只产出 `docs/01-features/01-feature-matrix.md`。
