@@ -14,12 +14,12 @@
 
 | 文档路径 | 规范类型 | 核心职责与设计边界 |
 | :--- | :--- | :--- |
-| [`docs/02-design/01-system-architecture.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/01-system-architecture.md) | **【总览篇】系统总架构** | 系统分层架构图、端到端请求生命周期序列图、`src/` 与 `web/` 模块分层与核心公共 Trait 定义、单二进制嵌入方案 |
+| [`docs/02-design/01-system-architecture.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/01-system-architecture.md) | **【总览篇】系统总架构** | 系统分层架构图、端到端请求生命周期序列图、`src/` 与 `web/` 模块分层、核心公共 Trait 定义、底层技术底座选型决议、单二进制嵌入方案 |
 | [`docs/02-design/02-storage-and-models.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/02-storage-and-models.md) | **【存储篇】存储模型与迁移** | SQLite WAL 存储引擎、完整 DDL 物理建模、复合索引与查询优化、`migrations/` 声明式自初始化与升迁机制 |
 | [`docs/02-design/03-routing-and-proxy.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/03-routing-and-proxy.md) | **【代理篇】调度与流式中继** | 多协议原生直通代理、加权最小活跃长连接算法 (无除法交叉乘法)、`ActiveConnectionGuard` (RAII 防泄漏)、SSE 零缓冲透传、Token usage 提取与 Abort 中断传导 |
 | [`docs/02-design/04-limiting-and-audit.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/04-limiting-and-audit.md) | **【流控与审计篇】安全与审计** | 虚拟 Key 鉴权与脱敏、后端物理凭据隔离、无锁令牌桶限流 (RPM/并发)、日/周双层配额 (Daily & Weekly Quotas) 阻断、Tokio mpsc 异步落盘流水线 |
 
-> **红线提示**：本阶段**严禁编写任何业务源码与测试代码**，只产出上述 4 篇系统架构设计规范。
+> **红线提示**：本阶段**严禁编写任何业务源码与测试代码**，只产出上述系统架构设计规范。
 
 ---
 
@@ -31,7 +31,6 @@
 - 绘制整体系统分层架构图（Mermaid 格式），涵盖：网络接入层、鉴权与流控层、路由调度层、SSE 透传中继层、异步审计落盘管道与嵌入式 Web 管理控制台。
 - 详细绘制客户端 HTTP/SSE 请求的端到端生命周期序列图 (Sequence Diagram)：
   `Client -> 鉴权校验 -> 令牌桶与日/周配额预检 -> 路由集群选路 -> 活跃连接计数绑定 -> Upstream 中继转发 -> 流式 Chunk 实时透传与 Usage 提取 -> 释放连接计数 -> 异步审计事件投递 -> 批量落盘`。
-- 定义 `src/` 与 `web/` 的模块与目录层级规范（高内聚、低耦合、清晰分层），明确各个子模块职责边界。
 
 ### 2. 调度算法与并发控制设计 (对应 `03-routing-and-proxy.md`)
 - **调度选路算法落地**：落实基于加权最小活跃长连接算法，**明确采用无除法交叉乘法比较**（$\text{Compare}(A, B) \iff C_A \times W_B \text{ vs } C_B \times W_A$），杜绝整除截断丢失精度；定义多节点负载相等时的平滑轮询机制与冷启动选路策略。
@@ -66,6 +65,22 @@
 ### 7. 嵌入式 Web 控制台与单二进制打包方案 (对应 `01-system-architecture.md`)
 - **静态资源内嵌方案**：设计通过 `rust-embed` 将前端产物打包至二进制文件的集成流程与 HTTP 静态文件路由分发（含 SPA Fallback 机制）。
 - **API 隔离与统一端口**：定义网关代理请求路由与管理后台 REST API 路由的分发策略（支持统一端口或独立端口监听）。
+
+### 8. 代码工程结构与模块划分 (对应 `01-system-architecture.md`)
+- **模块分层与职责边界**：推导并确定 `src/` 与 `web/` 的模块与目录层级规范（高内聚、低耦合、清晰分层），明确各个子模块职责边界（`gateway/`, `routing/`, `limiting/`, `storage/`, `admin/`, `telemetry/` 等）。
+- **核心技术底座选型决议**：明确关键 Rust 底层依赖的技术选型依据（运行时 Tokio、Web 框架 Axum、客户端 Reqwest、数据库驱动 SQLx/rusqlite、静态内嵌 rust-embed、序列化 serde 等），并给出决策理由。
+
+---
+
+## 执行节奏与分步编制策略 (Execution Rhythm)
+
+为保证每篇设计文档的技术深度与完整性，**杜绝因大模型单次生成 Token 耗尽而导致内容压缩、简略或截断**，执行本指令时应采取以下节奏：
+
+1. **第一步（当前首要任务）**：聚焦编制基石文档 [`docs/02-design/01-system-architecture.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/01-system-architecture.md)（总体分层架构、请求生命周期、模块组织与技术栈决议）；
+2. **第二步**：检视并定稿总架构后，再依次输出专题子设计：
+   - 存储模型与迁移规范 [`docs/02-design/02-storage-and-models.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/02-storage-and-models.md)
+   - 调度与直通流式引擎 [`docs/02-design/03-routing-and-proxy.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/03-routing-and-proxy.md)
+   - 安全流控与异步审计 [`docs/02-design/04-limiting-and-audit.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/04-limiting-and-audit.md)
 
 ---
 
