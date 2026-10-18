@@ -10,15 +10,16 @@
 
 ## 2. 任务目标与阶段三文档矩阵 (Deliverables Matrix)
 
-阶段三的目标是把阶段二的架构设计方案转化为**无歧义的前后端/网关客户端接口契约**以及**可执行、可检验的工程实施任务分解清单**。
+阶段三的目标是把阶段二的架构设计方案转化为**无歧义的前后端/网关客户端接口契约、底座存储数据契约**以及**可执行、可检验的工程实施任务分解清单**。
 
 | 文档路径 | 规范类型 | 核心职责与设计边界 |
 | :--- | :--- | :--- |
 | [`docs/03-api/01-gateway-api.md`](file:///home/fugui/rusts/rs-gate/docs/03-api/01-gateway-api.md) | **【代理协议契约】网关代理 API 契约** | 定义 OpenAI 兼容与原生直通端点契约（`/v1/chat/completions`、`/v1/responses`、`/v1/completions`、`/v1/embeddings`、`/v1/rerank`、`/v1/models`）；请求头/响应头规范；统一标准错误体；SSE 流式帧与 Usage chunk 规范。 |
 | [`docs/03-api/02-admin-api.md`](file:///home/fugui/rusts/rs-gate/docs/03-api/02-admin-api.md) | **【控制台契约】管理后台 REST API 契约** | 控制台前后端交互 REST API 契约：管理员身份认证、虚拟 API Key 全生命周期与日周配额重置、模型后端集群拓扑热更新、即时能力探测触发、10万级审计日志下钻筛选、监控统计大盘与健康探针。 |
+| [`docs/03-api/03-database-schema.md`](file:///home/fugui/rusts/rs-gate/docs/03-api/03-database-schema.md) | **【存储数据契约】数据库 DDL 与字段字典契约** | 权威 SQLite 物理表结构 DDL 契约、完整数据字典（类型/空值/默认值/范围约束）、外键级联规则、关键查询复合索引定义、初始种子数据与默认超管初始化规范。 |
 | [`docs/04-tasks/01-tasks.md`](file:///home/fugui/rusts/rs-gate/docs/04-tasks/01-tasks.md) | **【任务与验收】工程实施任务分解与 AC** | 将后续代码实现严格分解为 Milestone 1 ~ Milestone 5；定义每个里程碑的文件变更树、开发前置条件、详细开发任务步骤与自动化验收标准 (AC) 及命令行验证手册。 |
 
-> **红线提示**：本阶段**严禁直接编写业务实现源码**，聚焦编制上述接口契约与任务验收规范。所有接口定义必须具备完整请求/响应 JSON 示例与字段约束；任务拆解必须精准到具体代码文件路径与方法签名。
+> **红线提示**：本阶段**严禁直接编写业务实现源码**，聚焦编制上述接口契约与任务验收规范。所有接口定义必须具备完整请求/响应 JSON 示例与字段约束；数据库契约必须具备严谨完整的数据字典；任务拆解必须精准到具体代码文件路径与方法签名。
 
 ---
 
@@ -77,7 +78,24 @@
    - `GET /health/ready`（SQLite 与核心组件就绪探针）；
    - `GET /metrics`（Prometheus OpenMetrics 指标文本输出）。
 
-### 3.3 实施任务分解与自动化验收标准 (`docs/04-tasks/01-tasks.md`)
+### 3.3 存储数据契约与 DDL 规范 (`docs/03-api/03-database-schema.md`)
+1. **SQLite 物理表结构标准 DDL**：
+   - `admin_users`（管理员账户与哈希）；
+   - `virtual_keys`（虚拟 API Key 与限额模型）；
+   - `quota_usages`（日/周双周期 Token 累加明细）；
+   - `models`（逻辑模型与元数据）；
+   - `backend_servers`（物理后端实例、权重与托管凭据）；
+   - `model_backends`（模型与后端多对多映射绑定）；
+   - `audit_logs`（全链路调用审计流水）。
+2. **完整数据字典与字段约束规范**：
+   - 对上述 7 张表的每个字段提供详尽数据字典（字段名、数据类型、是否必填、默认值、外键关联、枚举值集合、业务含义）；
+   - 时间戳统一规范（统一采用毫秒级 Unix 时间戳或 ISO 8601 标准字符串）。
+3. **关键索引契约**：
+   - 明确定义各表的主键、唯一约束索引与查询加速复合索引（覆盖列、升降序、预期加速场景）。
+4. **初始种子数据与默认超管初始化规范**：
+   - 首次部署无数据库文件时的自初始化种子数据契约（包含内置默认管理员账号生成规则、默认模型映射示例等）。
+
+### 3.4 实施任务分解与自动化验收标准 (`docs/04-tasks/01-tasks.md`)
 将后续代码实现严格拆解为 5 大里程碑，杜绝一次性盲目堆砌：
 1. **Milestone 1：基础骨架与存储引擎 (Foundation & Storage)**
    - 范围：Cargo 依赖组织、全局配置管理（`src/config/`）、`tracing` 结构化日志、SQLite WAL 存储连接池与 `migrations/` 声明式自初始化、存活健康探针。
@@ -103,7 +121,8 @@
 
 1. **第一步（当前首要任务）**：编制 [`docs/03-api/01-gateway-api.md`](file:///home/fugui/rusts/rs-gate/docs/03-api/01-gateway-api.md)（【代理协议契约】网关代理 API 契约规范）；
 2. **第二步**：编制 [`docs/03-api/02-admin-api.md`](file:///home/fugui/rusts/rs-gate/docs/03-api/02-admin-api.md)（【控制台契约】管理后台 REST API 契约规范）；
-3. **第三步**：编制 [`docs/04-tasks/01-tasks.md`](file:///home/fugui/rusts/rs-gate/docs/04-tasks/01-tasks.md)（【任务与验收】工程实施任务分解与自动化验收清单）。
+3. **第三步**：编制 [`docs/03-api/03-database-schema.md`](file:///home/fugui/rusts/rs-gate/docs/03-api/03-database-schema.md)（【存储数据契约】数据库 DDL 与字段字典契约）；
+4. **第四步**：编制 [`docs/04-tasks/01-tasks.md`](file:///home/fugui/rusts/rs-gate/docs/04-tasks/01-tasks.md)（【任务与验收】工程实施任务分解与自动化验收清单）。
 
 ---
 
