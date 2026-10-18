@@ -10,7 +10,8 @@
 docs/
 ├── 00-prompt/       # 提示词库：记录各阶段 Prompt 资产、初始化指令与演进提示词
 │   ├── 01-init.md   # 系统初始化与 SDD 开发总原则指令
-│   └── 02-design-prompt.md # 阶段二系统架构设计提示词指令
+│   ├── 02-design-prompt.md # 阶段二系统架构设计提示词指令
+│   └── 03-api-and-tasks-prompt.md # 阶段三接口契约与任务分解提示词指令
 ├── 01-features/     # 特性与需求边界：特性清单矩阵 (Feature Matrix)、P0~P2 优先级与 Non-Goals
 │   └── 01-feature-matrix.md # 阶段一需求范围与特性矩阵 (Feature Matrix)
 ├── 02-design/       # 系统技术架构 (SDD)：总分系列架构设计规范
