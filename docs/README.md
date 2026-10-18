@@ -9,11 +9,15 @@
 ```text
 docs/
 ├── 00-prompt/       # 提示词库：记录各阶段 Prompt 资产、初始化指令与演进提示词
-│   └── 01-init.md   # 系统初始化与 SDD 开发总原则指令
+│   ├── 01-init.md   # 系统初始化与 SDD 开发总原则指令
+│   └── 02-design-prompt.md # 阶段二系统架构设计提示词指令
 ├── 01-features/     # 特性与需求边界：特性清单矩阵 (Feature Matrix)、P0~P2 优先级与 Non-Goals
 │   └── 01-feature-matrix.md # 阶段一需求范围与特性矩阵 (Feature Matrix)
-├── 02-design/       # 系统技术架构 (SDD)：端到端架构设计、数据模型、流式转发与模块组织
-│   └── 01-design.md # 阶段二系统技术架构设计
+├── 02-design/       # 系统技术架构 (SDD)：总分系列架构设计规范
+│   ├── 01-system-architecture.md # 系统总体架构、端到端数据流与模块分层
+│   ├── 02-storage-and-models.md  # SQLite 存储模型、DDL 与迁移机制
+│   ├── 03-routing-and-proxy.md   # 多协议直通、加权调度、RAII 防护与 SSE 引擎
+│   └── 04-limiting-and-audit.md  # 虚拟 Key 鉴权、日周配额与异步审计流水线
 ├── 03-api/          # 接口契约规范：OpenAI 兼容代理协议与管理控制台 REST API 定义
 │   ├── 01-gateway-api.md # 网关代理端点契约 (OpenAI/vLLM/SGLang 直通)
 │   └── 02-admin-api.md   # 管理控制台后端 REST 契约
