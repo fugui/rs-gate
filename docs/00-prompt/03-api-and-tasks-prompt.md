@@ -44,49 +44,53 @@
    - 尾部 Usage 帧：`data: {"usage":{"prompt_tokens":12,"completion_tokens":45,"total_tokens":57}}\n\n`；
    - 结束帧：`data: [DONE]\n\n`。
 
-### 3.2 管理控制台 REST API 契约规范 (`docs/03-api/02-admin-api.md`)
+### 3.2 控制台与自服务门户 REST API 契约规范 (`docs/03-api/02-admin-api.md`)
 1. **统一返回包装格式**：`{"code": 0, "message": "success", "data": { ... }}`；
-2. **鉴权端点**：
-   - `POST /api/admin/auth/login`（用户名/密码登录，返回 JWT/Session Cookie）；
-   - `POST /api/admin/auth/logout`（登出注销）；
-   - `GET /api/admin/auth/me`（获取当前管理员信息与角色）。
-3. **虚拟 API Key 管理端点**：
-   - `GET /api/admin/keys`（Key 列表，包含日周配额已用进度）；
-   - `POST /api/admin/keys`（新建 Key，仅本次返回明文 `sk-gate-...`）；
-   - `PUT /api/admin/keys/:id`（修改限额、RPM、日周配额上限与模型白名单）；
-   - `DELETE /api/admin/keys/:id`（软删除/禁用 Key）；
-   - `POST /api/admin/keys/:id/reset-quota`（手动清零今日或本周已用 Token）。
-4. **物理后端与能力探测端点**：
-   - `GET /api/admin/backends`（后端服务器列表，含权重、协议能力徽章、健康状态机与实时活跃连接数）；
-   - `POST /api/admin/backends`（添加后端服务器，配置地址、权重、托管凭据，并立即触发初次探活）；
-   - `PUT /api/admin/backends/:id`（修改权重或托管凭据）；
-   - `DELETE /api/admin/backends/:id`（下线并移除后端）；
-   - `POST /api/admin/backends/:id/probe`（手动触发即时协议能力与健康探测）。
-5. **逻辑模型管理端点**：
-   - `GET /api/admin/models`（模型列表及挂载后端池）；
-   - `POST /api/admin/models`（定义新逻辑模型）；
-   - `PUT /api/admin/models/:id`（修改模型参数）；
-   - `POST /api/admin/models/:id/backends`（绑定后端并设置权重，触发内存路由表热重载）；
-   - `DELETE /api/admin/models/:id/backends/:backend_id`（解绑后端）。
-6. **审计日志与统计大盘端点**：
-   - `GET /api/admin/audits`（多维筛选：时间范围、Key、模型、状态码、耗时，支持分页与游标）；
-   - `GET /api/admin/audits/export`（CSV/JSON 账单导出）；
-   - `GET /api/admin/stats/overview`（今日请求总数、总 Token 消耗、活跃长连接、平均 P99 延迟）；
-   - `GET /api/admin/stats/trends`（过去 24 小时 / 7 天吞吐与 Token 消耗时序折线数据）。
-7. **系统监控与运维端点**：
+2. **通用鉴权端点 (`/api/auth/*`)**：
+   - `POST /api/auth/login`（用户名/密码登录，返回 JWT/Session Cookie，载荷包含角色 `superadmin` / `admin` / `user`）；
+   - `POST /api/auth/logout`（登出注销）；
+   - `GET /api/auth/me`（获取当前登录用户信息与角色权限）。
+3. **普通用户自服务端点 (`/api/user/*`)**：
+   - `GET /api/user/models`（查看可用逻辑模型清单与接入指南，只读）；
+   - `GET /api/user/keys`（获取当前登录用户所属的 API Key 列表与日周配额使用进度）；
+   - `POST /api/user/keys`（自助申领并创建新 Key，仅本次返回明文 `sk-gate-...`）；
+   - `PUT /api/user/keys/:id`（修改本人 Key 名称与允许访问的模型白名单）；
+   - `DELETE /api/user/keys/:id`（禁用/删除本人 Key）；
+   - `GET /api/user/audits`（仅筛选当前用户自身 Key 产生的调用流水与错误排查）。
+4. **管理员管控端点 (`/api/admin/*`)**：
+   - **用户治理**：`GET /api/admin/users`、`POST /api/admin/users`、`PUT /api/admin/users/:id`（用户全生命周期与角色管理）；
+   - **Key 管控**：`GET /api/admin/keys`（全量 Key 监控，支持按归属用户筛选）、`POST /api/admin/keys`（管理员代建 Key）、`PUT /api/admin/keys/:id`（强制修改配额与模型）、`DELETE /api/admin/keys/:id`（强制吊销）、`POST /api/admin/keys/:id/reset-quota`（手动清零周期 Token）；
+   - **物理后端管理**：
+     - `GET /api/admin/backends`（后端服务器列表，含权重、协议能力徽章、健康状态机与实时活跃连接数）；
+     - `POST /api/admin/backends`（添加后端服务器，配置地址、权重、托管凭据，并立即触发初次探活）；
+     - `PUT /api/admin/backends/:id`（修改权重或托管凭据）；
+     - `DELETE /api/admin/backends/:id`（下线并移除后端）；
+     - `POST /api/admin/backends/:id/probe`（手动触发即时协议能力与健康探测）；
+   - **逻辑模型管理**：
+     - `GET /api/admin/models`（模型列表及挂载后端池）；
+     - `POST /api/admin/models`（定义新逻辑模型）；
+     - `PUT /api/admin/models/:id`（修改模型参数）；
+     - `POST /api/admin/models/:id/backends`（绑定后端并设置权重，触发内存路由表热重载）；
+     - `DELETE /api/admin/models/:id/backends/:backend_id`（解绑后端）；
+   - **全局审计与大盘**：
+     - `GET /api/admin/audits`（全量多维筛选：时间范围、用户、Key、模型、状态码、耗时，支持分页与游标）；
+     - `GET /api/admin/audits/export`（CSV/JSON 账单对账流式导出）；
+     - `GET /api/admin/stats/overview`（今日请求总数、总 Token 消耗、活跃长连接、平均 P99 延迟）；
+     - `GET /api/admin/stats/trends`（过去 24 小时 / 7 天吞吐与 Token 消耗时序折线数据）。
+5. **系统监控与运维端点**：
    - `GET /health/live`（进程存活探针）；
    - `GET /health/ready`（SQLite 与核心组件就绪探针）；
    - `GET /metrics`（Prometheus OpenMetrics 指标文本输出）。
 
 ### 3.3 存储数据契约与 DDL 规范 (`docs/03-api/03-database-schema.md`)
 1. **SQLite 物理表结构标准 DDL**：
-   - `admin_users`（管理员账户与哈希）；
-   - `virtual_keys`（虚拟 API Key 与限额模型）；
+   - `users`（用户账户、密码哈希与角色 superadmin/admin/user）；
+   - `virtual_keys`（虚拟 API Key、归属用户 user_id 与限额模型）；
    - `quota_usages`（日/周双周期 Token 累加明细）；
    - `models`（逻辑模型与元数据）；
    - `backend_servers`（物理后端实例、权重与托管凭据）；
    - `model_backends`（模型与后端多对多映射绑定）；
-   - `audit_logs`（全链路调用审计流水）。
+   - `audit_logs`（全链路调用审计流水，包含 user_id 冗余归属字段）。
 2. **完整数据字典与字段约束规范**：
    - 对上述 7 张表的每个字段提供详尽数据字典（字段名、数据类型、是否必填、默认值、外键关联、枚举值集合、业务含义）；
    - 时间戳统一规范（统一采用毫秒级 Unix 时间戳或 ISO 8601 标准字符串）。

@@ -85,10 +85,10 @@ graph TD
         AuditWorker --> QuotaSync["更新今日/本周已用配额 (quota_usages)"]
     end
 
-    subgraph Layer6["6. 嵌入式管理控制台 (Embedded Admin Web)"]
-        RouterDist -->|"/api/admin/* 控制台 API"| AdminAuth["管理员 Session / JWT 鉴权"]
-        AdminAuth --> AdminAPI["控制台 REST API (Key / Backend / Model / Audit / Stats)"]
-        AdminAPI --> SqliteWAL
+    subgraph Layer6["6. 嵌入式控制台与门户 (Embedded Console & Portal)"]
+        RouterDist -->|"/api/auth/*, /api/user/*, /api/admin/*"| WebAuth["用户/管理员 Session & JWT 鉴权 (RBAC)"]
+        WebAuth --> WebAPI["控制台 REST API (用户自服务 Key/个人日志 / 管理员物理后端/模型热更/全局监控)"]
+        WebAPI --> SqliteWAL
         RouterDist -->|"/* 静态界面资源"| RustEmbed["rust-embed 内嵌静态资源服务"]
         RustEmbed --> SPAFallback["SPA HTML5 History 路由回退 (Fallback to index.html)"]
     end
@@ -110,7 +110,7 @@ graph TD
 | **3. 核心路由与调度层** | 维护逻辑模型到物理后端池的映射；周期性协议能力预探测；执行加权最小活跃长连接（WLAC）无除法交叉乘法选路；绑定 RAII 活跃连接守卫。 | 读写锁缓存 `Arc<RwLock<RouteTable>>`、`ActiveConnectionGuard` | 选路计算耗时 $\le 0.05\text{ms}$，无活跃长连接泄漏。 |
 | **4. 直通中继与流式引擎** | 原生多协议透明转发、Reqwest 长连接池复用、逐 Chunk 零缓冲流式透传、增量 Token Usage 提取、客户端 Abort 级联中断与资源释放。 | Reqwest Client、`tokio_stream`、`async-stream`、`bytes::Bytes` | 首字透传延迟 (TTFT Overhead) $\le 1\text{ms}$，内存零拷贝/零额外缓冲。 |
 | **5. 异步审计管道** | 组装调用审计流水，通过 Tokio mpsc 有界通道投递，后台独立 Worker 触发批量事务刷盘，同步维护日/周累积配额，定期执行历史数据 TTL 清理。 | Tokio mpsc (有界 10,000)、SQLx SQLite WAL、批量提交 Worker | 代理热路径无锁非阻塞（投递耗时 $\le 0.02\text{ms}$），落盘抖动零扩散。 |
-| **6. 嵌入式管理控制台** | 静态编译内嵌 Web SPA 资源、MIME 嗅探与缓存头注入、SPA 路由回退、管理员鉴权与配置热更新 REST API、监控指标大盘分发。 | `rust-embed`、Axum ServeDir/ServeFile、JWT 鉴权、Prometheus `/metrics` | 单二进制自包含，无外部静态资源网络依赖。 |
+| **6. 嵌入式控制台与门户** | 静态编译内嵌 Web SPA 资源、MIME 嗅探与缓存头注入、SPA 路由回退、用户自服务与管理员配置热更新 REST API、监控指标大盘分发。 | `rust-embed`、Axum ServeDir/ServeFile、JWT RBAC 鉴权、Prometheus `/metrics` | 单二进制自包含，无外部静态资源网络依赖。 |
 
 ---
 
@@ -290,13 +290,14 @@ rs-gate/
 │   │   ├── event.rs                # AuditEvent 数据结构
 │   │   ├── channel.rs              # Tokio mpsc 有界通道发送端抽象
 │   │   └── worker.rs               # 后台批量刷盘 Worker (时间窗口与批量事务)
-│   ├── admin/                      # 管理控制台 REST API
-│   │   ├── mod.rs                  # Admin API 路由注册
-│   │   ├── auth.rs                 # 管理员登录鉴权与 Session/JWT 中间件
-│   │   ├── key_api.rs              # Key 管理接口 (增删改查、配额重置)
+│   ├── web/                        # 控制台与自服务门户 REST API
+│   │   ├── mod.rs                  # Web 路由注册与 RBAC 中间件
+│   │   ├── auth.rs                 # 用户/管理员登录鉴权与 Session/JWT 中间件
+│   │   ├── user_api.rs             # 普通用户自服务接口 (个人 Key、配额进度、个人日志)
+│   │   ├── admin_key_api.rs        # 管理员 Key 全局管控与配额重置接口
 │   │   ├── backend_api.rs          # 后端实例管理与即时能力探测触发
 │   │   ├── model_api.rs            # 模型绑定与权重热配置接口
-│   │   ├── audit_api.rs            # 审计日志多维筛选与分页接口
+│   │   ├── audit_api.rs            # 全局审计日志多维筛选与分页导出
 │   │   └── stats_api.rs            # 流量看板与吞吐统计接口
 │   ├── embedded/                   # 静态资产内嵌与 SPA 服务
 │   │   ├── mod.rs                  # rust-embed 资源绑定定义
@@ -558,6 +559,7 @@ pub struct TokenUsage {
 pub struct AuditEvent {
     pub trace_id: String,
     pub key_id: String,
+    pub user_id: Option<String>, // 归属用户 ID (支持用户自服务对账与排查)
     pub model: String,
     pub backend_id: String,
     pub protocol: ProtocolType,

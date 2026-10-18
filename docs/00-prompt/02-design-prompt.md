@@ -48,8 +48,8 @@
 
 ### 5. 存储架构与声明式演进方案 (对应 `02-storage-and-models.md`)
 - **数据库模式设计**：基于 SQLite WAL 模式，输出完整的 DDL 物理数据模型，包括：
-  - `admin_users`（管理员用户与密码 Hash）；
-  - `virtual_keys`（虚拟 Key 摘要、归属、日/周配额上限与重置周期）；
+  - `users`（用户账户、密码 Hash 与角色 superadmin/admin/user）；
+  - `virtual_keys`（虚拟 Key 摘要、用户归属 user_id、日/周配额上限与重置周期）；
   - `backend_servers`（物理后端实例、地址、权重、托管凭据、探测能力集、健康状态）；
   - `models` 与 `model_backends`（逻辑模型定义及其后端的关联与权重映射）；
   - `audit_logs`（审计调用流水、Token 消耗、请求耗时、状态码、Trace ID）；

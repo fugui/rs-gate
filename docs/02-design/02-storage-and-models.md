@@ -76,18 +76,19 @@ rs-gate 的物理数据模型紧密贴合企业级大模型网关的业务实体
 
 ```mermaid
 erDiagram
-    ADMIN_USERS ||--o{ VIRTUAL_KEYS : "creates / manages"
+    USERS ||--o{ VIRTUAL_KEYS : "owns / manages"
+    USERS ||--o{ AUDIT_LOGS : "performs / bills"
     VIRTUAL_KEYS ||--o{ QUOTA_USAGES : "tracks consumption"
     VIRTUAL_KEYS ||--o{ AUDIT_LOGS : "generates"
     MODELS ||--|{ MODEL_BACKENDS : "associates"
     BACKEND_SERVERS ||--|{ MODEL_BACKENDS : "provides inference"
     BACKEND_SERVERS ||--o{ AUDIT_LOGS : "executes request"
 
-    ADMIN_USERS {
+    USERS {
         TEXT id PK "UUID / NanoID"
-        TEXT username UK "管理员用户名"
+        TEXT username UK "用户名"
         TEXT password_hash "Argon2id 密码哈希"
-        TEXT role "角色: superadmin / admin / operator"
+        TEXT role "角色: superadmin / admin / user"
         INTEGER is_active "是否启用 (1/0)"
         INTEGER created_at "创建时间毫秒时间戳"
         INTEGER updated_at "更新时间毫秒时间戳"
@@ -95,6 +96,7 @@ erDiagram
 
     VIRTUAL_KEYS {
         TEXT id PK "Key 唯一标识"
+        TEXT user_id FK "所属用户 ID"
         TEXT name "Key 描述名称 / 业务归属"
         TEXT key_hash UK "SHA-256 加盐哈希摘要"
         TEXT key_prefix "明文前缀 (e.g. sk-gate-ab12...)"
@@ -157,6 +159,7 @@ erDiagram
         TEXT id PK "日志流水主键"
         TEXT trace_id "链路追踪全局 Trace ID"
         TEXT key_id FK "虚拟 Key ID"
+        TEXT user_id FK "关联用户 ID (归属对账与自助排查)"
         TEXT model "调用的逻辑模型标识"
         TEXT backend_id FK "实际承载的后端实例 ID"
         TEXT protocol "请求协议类型 (chat/responses/embeddings 等)"
@@ -185,12 +188,12 @@ erDiagram
 -- 适用引擎: SQLite 3.35+ (WAL 模式)
 -- ============================================================================
 
--- 1. 管理员账户表 (admin_users)
-CREATE TABLE IF NOT EXISTS admin_users (
+-- 1. 用户账户表 (users) - 统一管理超管、管理员与普通开发者用户
+CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY NOT NULL,
     username TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
-    role TEXT NOT NULL DEFAULT 'admin',
+    role TEXT NOT NULL DEFAULT 'user', -- 'superadmin' | 'admin' | 'user'
     is_active INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
@@ -199,6 +202,7 @@ CREATE TABLE IF NOT EXISTS admin_users (
 -- 2. 虚拟 API Key 表 (virtual_keys)
 CREATE TABLE IF NOT EXISTS virtual_keys (
     id TEXT PRIMARY KEY NOT NULL,
+    user_id TEXT NOT NULL,
     name TEXT NOT NULL,
     key_hash TEXT NOT NULL UNIQUE,
     key_prefix TEXT NOT NULL,
@@ -210,7 +214,8 @@ CREATE TABLE IF NOT EXISTS virtual_keys (
     is_active INTEGER NOT NULL DEFAULT 1,
     expires_at INTEGER,
     created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 -- 3. 日/周双周期配额累积表 (quota_usages)
@@ -271,6 +276,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     id TEXT PRIMARY KEY NOT NULL,
     trace_id TEXT NOT NULL,
     key_id TEXT NOT NULL,
+    user_id TEXT, -- 冗余关联用户 ID，加速用户级自服务明细检索与账单聚合
     model TEXT NOT NULL,
     backend_id TEXT NOT NULL,
     protocol TEXT NOT NULL,
@@ -307,6 +313,10 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_virtual_keys_key_hash 
     ON virtual_keys(key_hash);
 
+-- 虚拟 Key 用户归属检索索引 (支持用户控制台快速加载个人 Key 列表)
+CREATE INDEX IF NOT EXISTS idx_virtual_keys_user_id 
+    ON virtual_keys(user_id, created_at DESC);
+
 -- 配额快速点查复合索引 (key_id + period_type + period_start 唯一约束自带)
 CREATE INDEX IF NOT EXISTS idx_quota_usages_lookup 
     ON quota_usages(key_id, period_type, period_start);
@@ -328,6 +338,10 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at_desc
 -- 场景 B: 租户 Key 维度调用明细下钻与时间过滤
 CREATE INDEX IF NOT EXISTS idx_audit_logs_key_created 
     ON audit_logs(key_id, created_at DESC);
+
+-- 场景 B-2: 普通用户个人调用流水自助排查与账单对账
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user_created 
+    ON audit_logs(user_id, created_at DESC);
 
 -- 场景 C: 模型维度吞吐与消耗统计
 CREATE INDEX IF NOT EXISTS idx_audit_logs_model_created 
@@ -367,13 +381,13 @@ LIMIT 20;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
-/// 1. 管理员账户实体
+/// 1. 用户账户实体 (包含系统超管、管理员与普通开发者用户)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, FromRow)]
-pub struct AdminUserEntity {
+pub struct UserEntity {
     pub id: String,
     pub username: String,
     pub password_hash: String,
-    pub role: String,
+    pub role: String, // "superadmin" | "admin" | "user"
     pub is_active: i64,
     pub created_at: i64,
     pub updated_at: i64,
@@ -383,6 +397,7 @@ pub struct AdminUserEntity {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, FromRow)]
 pub struct VirtualKeyEntity {
     pub id: String,
+    pub user_id: String, // 所属用户 ID
     pub name: String,
     pub key_hash: String,
     pub key_prefix: String,
@@ -455,6 +470,7 @@ pub struct AuditLogEntity {
     pub id: String,
     pub trace_id: String,
     pub key_id: String,
+    pub user_id: Option<String>, // 归属用户 ID (支持用户自服务对账与排查)
     pub model: String,
     pub backend_id: String,
     pub protocol: String,
@@ -477,11 +493,23 @@ pub struct AuditLogEntity {
 use async_trait::async_trait;
 use crate::error::GatewayError;
 
+/// 用户账户数据访问契约 (支持超管、管理员与普通开发者自服务)
+#[async_trait]
+pub trait UserDao: Send + Sync {
+    async fn find_by_id(&self, user_id: &str) -> Result<Option<UserEntity>, GatewayError>;
+    async fn find_by_username(&self, username: &str) -> Result<Option<UserEntity>, GatewayError>;
+    async fn list_all(&self) -> Result<Vec<UserEntity>, GatewayError>;
+    async fn create(&self, user: &UserEntity) -> Result<(), GatewayError>;
+    async fn update(&self, user: &UserEntity) -> Result<(), GatewayError>;
+    async fn delete(&self, user_id: &str) -> Result<(), GatewayError>;
+}
+
 /// 虚拟 Key 数据访问契约
 #[async_trait]
 pub trait VirtualKeyDao: Send + Sync {
     async fn find_by_hash(&self, key_hash: &str) -> Result<Option<VirtualKeyEntity>, GatewayError>;
     async fn find_by_id(&self, key_id: &str) -> Result<Option<VirtualKeyEntity>, GatewayError>;
+    async fn list_by_user(&self, user_id: &str) -> Result<Vec<VirtualKeyEntity>, GatewayError>;
     async fn list_all(&self) -> Result<Vec<VirtualKeyEntity>, GatewayError>;
     async fn create(&self, key: &VirtualKeyEntity) -> Result<(), GatewayError>;
     async fn update(&self, key: &VirtualKeyEntity) -> Result<(), GatewayError>;
@@ -523,6 +551,7 @@ pub trait QuotaUsageDao: Send + Sync {
 #[derive(Debug, Default)]
 pub struct AuditQueryFilter {
     pub key_id: Option<String>,
+    pub user_id: Option<String>, // 支持普通用户按自身 ID 筛选个人调用流水
     pub model: Option<String>,
     pub protocol: Option<String>,
     pub http_status: Option<u16>,
@@ -576,10 +605,10 @@ graph TD
     RunMigrate --> CheckVersion{"检查 _sqlx_migrations 表版本"}
     CheckVersion -->|"存在新版本脚本"| ExecDDL["开启事务执行新 DDL 脚本"]
     ExecDDL --> CommitVersion["更新版本记录并提交事务"]
-    CheckVersion -->|"已是最新版本"| CheckAdmin{"检查 admin_users 表是否为空"}
+    CheckVersion -->|"已是最新版本"| CheckAdmin{"检查 users 表是否存在管理员"}
     CommitVersion --> CheckAdmin
 
-    CheckAdmin -->|"无任何管理员 (初次启动)"| GenAdmin["生成随机强密码 (16位)<br>Argon2id 哈希落库<br>在控制台日志高亮打印默认凭据"]
+    CheckAdmin -->|"无任何管理员 (初次启动)"| GenAdmin["生成默认超管 (admin)<br>随机强密码或初始密码<br>Argon2id 哈希落库 users 表 (role='superadmin')<br>在控制台日志高亮打印默认凭据"]
     CheckAdmin -->|"已存在管理员"| Ready["数据库初始化完毕，存储引擎就绪"]
     GenAdmin --> Ready
 
@@ -645,9 +674,9 @@ impl DatabaseManager {
         Ok(manager)
     }
 
-    /// 初次启动检测：若无管理员，则自动初始化
+    /// 初次启动检测：若无任何管理员账户，则自动初始化默认超管
     async fn ensure_default_admin(&self) -> Result<(), GatewayError> {
-        let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM admin_users")
+        let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users WHERE role IN ('superadmin', 'admin')")
             .fetch_one(&self.pool)
             .await
             .map_err(|e| GatewayError::DatabaseError(e.to_string()))?;
@@ -663,7 +692,7 @@ impl DatabaseManager {
 
             sqlx::query!(
                 r#"
-                INSERT INTO admin_users (id, username, password_hash, role, is_active, created_at, updated_at)
+                INSERT INTO users (id, username, password_hash, role, is_active, created_at, updated_at)
                 VALUES (?1, ?2, ?3, 'superadmin', 1, ?4, ?4)
                 "#,
                 admin_id,
@@ -676,9 +705,9 @@ impl DatabaseManager {
             .map_err(|e| GatewayError::DatabaseError(e.to_string()))?;
 
             warn!("============================================================");
-            warn!(" Initialized default admin account: {}", default_username);
-            warn!(" Initialized default admin password: {}", generated_password);
-            warn!(" PLEASE CHANGE PASSWORD IMMEDIATELY IN ADMIN CONSOLE! ");
+            warn!(" Initialized default superadmin account: {}", default_username);
+            warn!(" Initialized default superadmin password: {}", generated_password);
+            warn!(" PLEASE CHANGE PASSWORD IMMEDIATELY IN CONSOLE! ");
             warn!("============================================================");
         }
 
@@ -728,7 +757,7 @@ graph TD
 - [x] **架构合规性**：坚持 SQLite WAL 模式，单二进制本地存储，零外挂数据库（No Redis/Kafka/MySQL）。
 - [x] **DDL 完备性**：给出 7 大核心业务实体表的规范 DDL，主外键约束、默认值与时间戳规范统一。
 - [x] **索引覆盖度**：针对 Key 哈希鉴权点查、路由拓扑过滤及控制台多维筛选（10 万级日志 $\le 50\text{ms}$）设计了完整的复合索引体系。
-- [x] **强类型契约**：定义了完整的 Rust 实体模型（`AdminUserEntity`、`VirtualKeyEntity`、`AuditLogEntity` 等）与纯异步 DAO Trait。
+- [x] **强类型契约**：定义了完整的 Rust 实体模型（`UserEntity`、`VirtualKeyEntity`、`AuditLogEntity` 等）与纯异步 DAO Trait。
 - [x] **声明式迁移**：明确 `migrations/` 目录组织与 `sqlx::migrate!()` 编译期内嵌自初始化规范，包含首启动默认管理员创建。
 - [x] **生命周期管理**：设计了低峰期分批清理（Batch Delete）与增量收缩（Incremental Vacuum）机制，杜绝长事务锁库。
 

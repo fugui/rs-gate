@@ -389,15 +389,16 @@ impl AuditWorker {
             let insert_res = sqlx::query!(
                 r#"
                 INSERT INTO audit_logs (
-                    id, trace_id, key_id, model, backend_id, protocol,
+                    id, trace_id, key_id, user_id, model, backend_id, protocol,
                     client_ip, http_status, prompt_tokens, completion_tokens,
                     total_tokens, request_duration_ms, ttft_ms, is_stream,
                     error_message, created_at
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
                 "#,
                 event.id,
                 event.trace_id,
                 event.key_id,
+                event.user_id,
                 event.model,
                 event.backend_id,
                 event.protocol_str,
