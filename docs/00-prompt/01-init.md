@@ -28,17 +28,17 @@ rs-gate/
 
 ## 2. SDD 执行四大阶段
 
-### 阶段一：特性清单与边界明确 (`docs/01-features/features.md`)
+### 阶段一：特性清单与边界明确 (`docs/01-features/01-features.md`)
 - 输出需求功能矩阵，划分为 **核心网关 (Gateway)**、**流控与安全 (Security & Limiting)**、**管理控制台 (Admin Web)**、**系统与审计 (Ops & Audit)** 四大领域。
 - 标明优先级（P0/P1/P2）并明确定义 **Non-Goals（本项目当前阶段不做的功能）**，严格控制系统边界。
 
-### 阶段二：系统架构设计文档 (`docs/02-design/design.md`)
+### 阶段二：系统架构设计文档 (`docs/02-design/01-design.md`)
 - **系统架构图与数据流**：绘制端到端处理流水线（Client -> 鉴权 -> 限流 -> 路由 -> 流式代理 -> 异步审计）。
 - **存储 Schema 设计**：确定 SQLite 实体结构、索引设计与 `migrations/` 演化方案。
 - **低延迟 SSE 流式机制**：详细设计非阻塞流式转发与 Token 计费解析机制。
 - **代码结构设计**：在此时确定 `src/` 与 `web/` 的具体子目录与模块组织方式。
 
-### 阶段三：任务分解与验收标准 (`docs/04-tasks/tasks.md`)
+### 阶段三：任务分解与验收标准 (`docs/04-tasks/01-tasks.md`)
 - 将系统分解为 Milestone 1 ~ 5（基础框架 -> 核心代理 -> 鉴权流控 -> 嵌入式UI -> 压测发布）。
 - 每个 Milestone 必须列出明确的 **验收标准 (Acceptance Criteria)** 和自动化验证指令。
 
@@ -51,5 +51,5 @@ rs-gate/
 
 ## 🎯 初始执行指令
 现在，请严格遵循上述规范，开始执行第一步：
-在 `docs/01-features/features.md` 中输出详尽的**特性清单矩阵与范围界定文档**供我审阅。
-在这一步，请不要创建任何业务代码，只产出 `docs/01-features/features.md`。
+在 `docs/01-features/01-features.md` 中输出详尽的**特性清单矩阵与范围界定文档**供我审阅。
+在这一步，请不要创建任何业务代码，只产出 `docs/01-features/01-features.md`。

@@ -26,9 +26,9 @@ rs-gate/
 
 ## SDD 开发生命周期 (Phases)
 
-- [ ] **阶段一：特性清单与边界明确** (`docs/01-features/features.md`)
-- [ ] **阶段二：系统架构设计文档** (`docs/02-design/design.md`)
-- [ ] **阶段三：任务分解与验收标准** (`docs/04-tasks/tasks.md`)
+- [ ] **阶段一：特性清单与边界明确** (`docs/01-features/01-features.md`)
+- [ ] **阶段二：系统架构设计文档** (`docs/02-design/01-design.md`)
+- [ ] **阶段三：任务分解与验收标准** (`docs/04-tasks/01-tasks.md`)
 - [ ] **阶段四：工程实施与交付规范** (代码实现、静态检查、单元/集成测试与发布)
 
 ---

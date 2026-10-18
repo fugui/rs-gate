@@ -11,9 +11,9 @@
 > **「文档规范先行 -> 架构设计定稿 -> 接口契约明晰 -> 任务拆解与验收清单 -> 分阶段实施与验证」**
 
 ### 研发阶段递进原则
-1. **阶段一：特性清单与边界明确 (`docs/01-features/features.md`)**：明确网关、流控安全、管理控制台、审计系统的需求矩阵与 Non-Goals。
-2. **阶段二：系统架构设计文档 (`docs/02-design/design.md`)**：端到端数据流水线、低延迟 SSE 流式中继、SQLite 存储与索引设计、代码子模块分层定义。
-3. **阶段三：接口契约与任务分解 (`docs/03-api/`, `docs/04-tasks/tasks.md`)**：OpenAI 兼容协议、控制台 REST API 契约、Milestone 任务划分与自动化验收标准 (AC)。
+1. **阶段一：特性清单与边界明确 (`docs/01-features/01-features.md`)**：明确网关、流控安全、管理控制台、审计系统的需求矩阵与 Non-Goals。
+2. **阶段二：系统架构设计文档 (`docs/02-design/01-design.md`)**：端到端数据流水线、低延迟 SSE 流式中继、SQLite 存储与索引设计、代码子模块分层定义。
+3. **阶段三：接口契约与任务分解 (`docs/03-api/01-gateway-api.md`, `docs/04-tasks/01-tasks.md`)**：OpenAI 兼容与直通协议、控制台 REST API 契约、Milestone 任务划分与自动化验收标准 (AC)。
 4. **阶段四：工程实施与交付 (`src/`, `web/`, `tests/`)**：在上述设计定稿并确认后，方可开展业务代码与测试编写。
 
 ---
