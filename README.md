@@ -26,9 +26,13 @@ rs-gate/
 
 ## SDD 开发生命周期 (Phases)
 
-- [ ] **阶段一：特性清单与边界明确** (`docs/01-features/01-feature-matrix.md`)
-- [ ] **阶段二：系统架构设计文档** (`docs/02-design/01-design.md`)
-- [ ] **阶段三：任务分解与验收标准** (`docs/04-tasks/01-tasks.md`)
+- [x] **阶段一：特性清单与边界明确** ([`docs/01-features/01-feature-matrix.md`](file:///home/fugui/rusts/rs-gate/docs/01-features/01-feature-matrix.md))
+- [ ] **阶段二：系统架构设计文档**
+  - [x] [01-system-architecture.md](file:///home/fugui/rusts/rs-gate/docs/02-design/01-system-architecture.md) (【总览篇】系统总体架构设计)
+  - [ ] 02-storage-and-models.md (【存储篇】存储模型与迁移)
+  - [ ] 03-routing-and-proxy.md (【代理篇】调度与流式中继)
+  - [ ] 04-limiting-and-audit.md (【流控与审计篇】安全与审计)
+- [ ] **阶段三：接口契约与任务分解** (`docs/03-api/01-gateway-api.md`, `docs/04-tasks/01-tasks.md`)
 - [ ] **阶段四：工程实施与交付规范** (代码实现、静态检查、单元/集成测试与发布)
 
 ---
