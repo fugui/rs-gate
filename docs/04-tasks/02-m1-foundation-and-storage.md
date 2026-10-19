@@ -8,7 +8,7 @@
   - 实施总纲：[`docs/04-tasks/01-roadmap.md`](file:///home/fugui/rusts/rs-gate/docs/04-tasks/01-roadmap.md)
   - 架构设计：[`docs/02-design/01-system-architecture.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/01-system-architecture.md), [`docs/02-design/02-storage-and-models.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/02-storage-and-models.md)
   - 存储契约：[`docs/03-api/03-database-schema.md`](file:///home/fugui/rusts/rs-gate/docs/03-api/03-database-schema.md)
-- **状态**：定稿待审 (Ready for Review)
+- **状态**：已完成 (Completed - Commit: 37bc1ef)
 
 ---
 
@@ -28,27 +28,28 @@
 
 ```text
 rs-gate/
-├── Cargo.toml                              # [新增] 核心依赖清单与二进制构建配置
+├── Cargo.toml                              # [已落地交付] 核心依赖清单与二进制构建配置
 ├── migrations/
-│   ├── 20261019000000_init.sql             # [新增] 7 张物理表初始结构 DDL
-│   └── 20261019000001_indexes.sql          # [新增] 业务联合索引与覆盖索引 DDL
+│   ├── 20261019000000_init.sql             # [已落地交付] 7 张物理表初始结构 DDL
+│   └── 20261019000001_indexes.sql          # [已落地交付] 业务联合索引与覆盖索引 DDL
 ├── src/
-│   ├── main.rs                             # [新增] 应用主入口编排
-│   ├── server.rs                           # [新增] Axum 服务生命周期与路由挂载
-│   ├── telemetry.rs                        # [新增] Tracing 结构化日志初始化
+│   ├── lib.rs                              # [已落地交付] 根模块导出
+│   ├── main.rs                             # [已落地交付] 应用主入口编排与平滑停机
+│   ├── server.rs                           # [已落地交付] Axum 服务生命周期与路由挂载
+│   ├── telemetry.rs                        # [已落地交付] Tracing 结构化日志初始化
 │   ├── config/
-│   │   ├── mod.rs                          # [新增] 配置加载与解析器
-│   │   └── options.rs                      # [新增] 配置结构体定义与默认值
+│   │   ├── mod.rs                          # [已落地交付] 配置加载与解析器
+│   │   └── options.rs                      # [已落地交付] 配置结构体定义与默认值
 │   └── storage/
-│       ├── mod.rs                          # [新增] 存储模块根导出
-│       ├── db.rs                           # [新增] SQLite 连接池与 Pragmas 配置
-│       ├── migration.rs                    # [新增] 声明式自迁移运行器
-│       └── bootstrap.rs                    # [新增] 默认超管账号初始化注入
+│       ├── mod.rs                          # [已落地交付] 存储模块根导出
+│       ├── db.rs                           # [已落地交付] SQLite 连接池与 Pragmas 配置
+│       ├── migration.rs                    # [已落地交付] 声明式自迁移运行器
+│       └── bootstrap.rs                    # [已落地交付] 默认超管账号初始化注入
 └── tests/
     ├── common/
-    │   └── mod.rs                          # [新增] 临时 SQLite 数据库测试夹具 (TestDbHarness)
-    ├── storage_migration_test.rs           # [新增] 存储迁移、表结构、外键与索引集成测试
-    └── health_probe_test.rs                # [新增] 存活探针 HTTP 接口集成测试
+    │   └── mod.rs                          # [已落地交付] 临时 SQLite 数据库测试夹具 (TestDbHarness)
+    ├── storage_migration_test.rs           # [已落地交付] 存储迁移、表结构、外键与索引集成测试
+    └── health_probe_test.rs                # [已落地交付] 存活探针 HTTP 接口集成测试
 ```
 
 ---
@@ -322,23 +323,27 @@ cargo test --all
 ```
 
 **验收门禁通过准则**：
-- [ ] `test_migration_idempotency` 成功通过，重复迁移耗时 $\le 50\text{ms}$；
-- [ ] `test_tables_and_foreign_keys_integrity` 成功校验 7 张表与外键完整性；
-- [ ] `test_indexes_exist` 校验联合索引已成功创建；
-- [ ] `test_bootstrap_superadmin_creation_and_auth` 成功生成超管账号且 Argon2 校验匹配；
-- [ ] `test_live_health_probe_returns_200` 响应 HTTP 200 与 `{"status":"alive"}`。
+- [x] `test_migration_idempotency` 成功通过，重复迁移耗时 $\le 50\text{ms}$；
+- [x] `test_tables_and_foreign_keys_integrity` 成功校验 7 张表与外键完整性；
+- [x] `test_indexes_exist` 校验联合索引已成功创建；
+- [x] `test_bootstrap_superadmin_creation_and_auth` 成功生成超管账号且 Argon2 校验匹配；
+- [x] `test_live_health_probe_returns_200` 响应 HTTP 200 与 `{"status":"alive"}`。
 
 ### 4.2 命令行黑盒验证手册 (CLI Blackbox Playbook)
 
 ```bash
-# 启动本地开发服务 (临时内存或本地数据目录)
+# 启动本地开发服务 (支持端口与数据库动态覆盖)
 RSGATE_SERVER__PORT=8080 RSGATE_DATABASE__URL="sqlite://data/rsgate_dev.db?mode=rwc" cargo run
 
-# 验证存活探针响应
-curl -i http://localhost:8080/health/live
+# 若 8080 端口已被本机其他进程占用（如遭遇 os error 98），可通过环境变量灵活变更端口：
+export RSGATE_SERVER__PORT=8030
+./target/debug/rs-gate
+
+# 验证存活探针响应 (对齐监听端口)
+curl -i http://localhost:8030/health/live
 
 # 预期返回结果
 # HTTP/1.1 200 OK
 # content-type: application/json
-# {"status":"alive","timestamp":1730000000000}
+# {"status":"alive","timestamp":1792413046761}
 ```

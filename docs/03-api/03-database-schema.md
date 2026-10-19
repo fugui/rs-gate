@@ -114,6 +114,7 @@ CREATE TABLE IF NOT EXISTS backend_servers (
     health_status TEXT NOT NULL DEFAULT 'healthy', -- 'healthy' | 'degraded' | 'circuit_broken'
     consecutive_failures INTEGER NOT NULL DEFAULT 0,
     last_probe_at INTEGER,
+    is_active INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 );
@@ -242,6 +243,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 | `health_status` | TEXT | **是** | `'healthy'` | 枚举：`healthy` \| `degraded` \| `circuit_broken` | 实例健康状态机。 |
 | `consecutive_failures` | INTEGER | **是** | `0` | $\ge 0$ | 连续失败计数。达到门限（3）触发 `circuit_broken` 熔断。 |
 | `last_probe_at` | INTEGER | 否 | NULL | 毫秒时间戳 | 最近一次探活完成时间。 |
+| `is_active` | INTEGER | **是** | `1` | `0` 或 `1` | 实例启用状态。`0` 时停止向该节点分派流量。 |
 | `created_at` | INTEGER | **是** | - | 毫秒时间戳 | 注册时间。 |
 | `updated_at` | INTEGER | **是** | - | 毫秒时间戳 | 更新时间。 |
 
