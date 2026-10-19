@@ -385,15 +385,15 @@ impl AuditWorker {
         };
 
         for event in buffer.drain(..) {
-            // 1. 批量插入审计明细
+            // 1. 批量插入审计明细 (包含重试次数与故障转移链路)
             let insert_res = sqlx::query!(
                 r#"
                 INSERT INTO audit_logs (
                     id, trace_id, key_id, user_id, model, backend_id, protocol,
                     client_ip, http_status, prompt_tokens, completion_tokens,
                     total_tokens, request_duration_ms, ttft_ms, is_stream,
-                    error_message, created_at
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
+                    retry_count, failover_path, error_message, created_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
                 "#,
                 event.id,
                 event.trace_id,
@@ -410,6 +410,8 @@ impl AuditWorker {
                 event.duration_ms,
                 event.ttft_ms,
                 event.is_stream as i64,
+                event.retry_count,
+                event.failover_path,
                 event.error_message,
                 event.created_at_timestamp,
             )
@@ -440,6 +442,7 @@ impl AuditWorker {
 - [x] **日/周双层配额**：清晰定义日配额与周配额的判定、准入门槛预留、周期时间对齐与自动轮转机制。
 - [x] **异步落盘流水线**：Tokio mpsc 有界队列解耦、500ms / 100 条批量事务提交、背压隔离策略与优雅停机排空。
 - [x] **强类型契约**：提供完整的 Rust 结构体与核心 Trait 代码，杜绝伪代码。
+- [x] **配额幂等与重试审计追踪**：明确定义重试期间客户端虚拟 Key RPM 与日/周配额绝不重复扣减，审计流水完整记录重试次数与后端转移轨迹。
 
 ### 6.2 阶段二（系统架构设计）圆满收官与阶段三衔接
 至此，阶段二的 **4 篇核心系统架构设计文档已全部编制完成**：

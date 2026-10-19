@@ -127,6 +127,8 @@ erDiagram
         TEXT id PK "逻辑模型标识 (e.g. deepseek-r1)"
         TEXT display_name "展示名称"
         TEXT description "模型能力与适用场景描述"
+        INTEGER max_retries "上游5xx/429/超时重试次数 (默认 2)"
+        INTEGER retry_interval_ms "基础退避等待时间毫秒 (默认 500)"
         INTEGER is_active "是否可用 (1/0)"
         INTEGER created_at "创建时间"
         INTEGER updated_at "更新时间"
@@ -171,6 +173,8 @@ erDiagram
         INTEGER request_duration_ms "总耗时毫秒数"
         INTEGER ttft_ms "首字透传耗时毫秒 (流式请求专属)"
         INTEGER is_stream "是否为 SSE 流式请求 (1/0)"
+        INTEGER retry_count "内部重试次数 (默认 0)"
+        TEXT failover_path "故障转移节点轨迹 JSON 数组"
         TEXT error_message "异常错误文本 (若存在)"
         INTEGER created_at "调用发生时间戳 (毫秒)"
     }
@@ -238,6 +242,8 @@ CREATE TABLE IF NOT EXISTS models (
     id TEXT PRIMARY KEY NOT NULL, -- 如 "deepseek-r1", "qwen-2.5-72b"
     display_name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
+    max_retries INTEGER NOT NULL DEFAULT 2, -- 上游 5xx/429/超时重试次数
+    retry_interval_ms INTEGER NOT NULL DEFAULT 500, -- 基础退避等待时间 (毫秒)
     is_active INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
@@ -288,6 +294,8 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     request_duration_ms INTEGER NOT NULL,
     ttft_ms INTEGER,
     is_stream INTEGER NOT NULL DEFAULT 0,
+    retry_count INTEGER NOT NULL DEFAULT 0, -- 内部重试次数 (默认 0)
+    failover_path TEXT, -- 经历的后端实例转移链路 JSON 数组 (e.g. '["node-1","node-2"]')
     error_message TEXT,
     created_at INTEGER NOT NULL
 );
@@ -458,6 +466,8 @@ pub struct ModelEntity {
     pub id: String,
     pub display_name: String,
     pub description: String,
+    pub max_retries: i64,       // 上游 5xx/429/超时重试次数 (默认 2)
+    pub retry_interval_ms: i64, // 基础退避等待时间 (默认 500ms)
     pub is_active: i64,
     pub created_at: i64,
     pub updated_at: i64,
@@ -508,6 +518,8 @@ pub struct AuditLogEntity {
     pub request_duration_ms: i64,
     pub ttft_ms: Option<i64>,
     pub is_stream: i64,
+    pub retry_count: i64,        // 内部重试次数 (默认 0)
+    pub failover_path: Option<String>, // 故障转移节点轨迹 JSON 数组
     pub error_message: Option<String>,
     pub created_at: i64,
 }

@@ -43,20 +43,32 @@ graph TD
     HeaderSanitizer --> WLACScheduler["2. 加权最小活跃长连接调度器 (WLAC)"]
     WLACScheduler --> InstanceSelected["确定目标物理后端实例<br>绑定 ActiveConnectionGuard (fetch_add)"]
 
-    subgraph ProxyPipeline["3. 透明双向中继管道 (Reqwest Pool)"]
+    subgraph ProxyPipeline["3. 透明双向中继管道与错误容错环 (Reqwest Pool)"]
         InstanceSelected --> UpstreamReq["原生直通转发 Body<br>(零 AST 转换, 保持 Raw Bytes)"]
         UpstreamReq --> TargetBackend["后端推理引擎 (vLLM / SGLang / TEI)"]
-        TargetBackend --> ResponseDetect{"响应类型判定"}
+        TargetBackend --> ErrorOrResponse{"上游状态检测"}
+        
+        ErrorOrResponse -->|"5xx / 429 / 连接超时 / 断开"| RetryCheck{"已重试次数 < 2 ?<br>(首字未发送前)"}
+        RetryCheck -->|"是 (可重试)"| Backoff["自适应退避等待 (指数退避+抖动 / Retry-After)"]
+        Backoff --> FailoverRoute["故障转移 (排除故障节点, 重新选路)"]
+        FailoverRoute -->|"重试并申领新 Guard"| UpstreamReq
+        
+        RetryCheck -->|"否 (耗尽或不可重试)"| ThrowError["透传标准错误响应给客户端"]
+        
+        ErrorOrResponse -->|"200/201 OK"| ResponseDetect{"响应类型判定"}
         ResponseDetect -->|"application/json (非流式)"| NonStream["完整响应透传<br>一次性解析 usage"]
         ResponseDetect -->|"text/event-stream (流式 SSE)"| StreamRelay["逐 Chunk 零缓冲流式管道<br>尾部 usage 增量解析"]
     end
 
-    NonStream --> GuardDrop["Guard Drop (fetch_sub) -> 审计投递"]
+    NonStream --> GuardDrop["Guard Drop (fetch_sub) -> 审计投递 (记录重试次数与链路)"]
     StreamRelay --> GuardDrop
+    ThrowError --> GuardDrop
 
     style HeaderSanitizer fill:#eff6ff,stroke:#3b82f6
     style WLACScheduler fill:#fef2f2,stroke:#ef4444
     style ProxyPipeline fill:#f0fdf4,stroke:#22c55e
+    style Backoff fill:#fffbeb,stroke:#f59e0b
+    style FailoverRoute fill:#fdf2f8,stroke:#ec4899
 ```
 
 ### 2.1 原生直通支持的端点矩阵
@@ -504,9 +516,202 @@ graph TD
 
 ---
 
-## 8. 交付验证标准与下一步衔接 (Verification & Roadmap)
+## 8. 上游故障重试与静默故障转移引擎 (Upstream Retry & Silent Failover Engine)
 
-### 8.1 代理与调度设计验收标准 (Verification Checklist)
+在高可用大模型企业网关中，上游物理后端（vLLM/SGLang 实例或第三方大模型提供商）的偶发抖动是常态现象：包括并发排队溢出导致的 `503 Service Unavailable`、进程 OOM 导致的连接重置、偶发网络超时，以及高并发下上游服务商返回的 `429 Too Many Requests`。
+
+rs-gate 设计了**上游透明故障转移与自适应退避重试引擎 (Upstream Silent Retry & Failover Engine)**，核心使命是将上游抖动完全屏蔽在网关内部，实现**下游客户端体验“零错误（Zero-Error Perception）”**。
+
+### 8.1 可重试异常判定矩阵与硬阻断红线 (Retry Decision Matrix)
+
+网关对上游响应实施严密的语义分析，区分“瞬态可恢复错误”与“客户端语义错误”：
+
+| 错误来源与类型 | HTTP 状态 / 异常特征 | 是否允许重试 | 网关决策与理由 |
+| :--- | :---: | :---: | :--- |
+| **网络层超时** | `ConnectTimeout`, `ReadTimeout` | ✅ **是** | 物理后端瞬时卡顿或握手超时，重试切节点可极大概率恢复。 |
+| **网络层断开** | `ConnectionReset`, `BrokenPipe` | ✅ **是** | 后端 Pod 重启或 TCP 异常中断，允许重试。 |
+| **上游内部服务故障** | `500 Internal Server Error` | ✅ **是** | 推理后端运行时崩溃或内部未捕获异常。 |
+| **网关代理类错误** | `502 Bad Gateway`, `504 Gateway Timeout` | ✅ **是** | 目标推理节点代理通道异常或执行超时。 |
+| **后端队列/容量满** | `503 Service Unavailable` | ✅ **是** | 后端显存排队队列已满或模型热加载中。 |
+| **上游供应商限流** | **`429 Too Many Requests`** | ✅ **是** | 触发上游服务商 RPM/TPM 门限，网关按 `Retry-After` 退避重试。 |
+| **客户端请求格式错误** | `400 Bad Request`, `422 Unprocessable` | ❌ **否 (硬阻断)** | 客户端 Payload 参数不合法，重试必然失败，直接透传。 |
+| **客户端鉴权失败** | `401 Unauthorized`, `403 Forbidden` | ❌ **否 (硬阻断)** | 鉴权失败，直接透传或返回标准错误。 |
+| **资源不存在** | `404 Not Found`, `405 Method Not Allowed` | ❌ **否 (硬阻断)** | 请求模型或端点不存在，直接透传。 |
+
+---
+
+### 8.2 流式 (SSE) 与非流式请求的重试安全边界 (Streaming Safety Boundary)
+
+大模型网关中，流式传输的重试必须恪守严格的技术红线，防止下游客户端界面乱码与数据重复：
+
+```mermaid
+graph TD
+    Request["接收到客户端请求"] --> IsStream{"是否为流式响应<br>(stream: true) ?"}
+    
+    IsStream -->|"否 (非流式 JSON)"| NonStreamMode["非流式模式：<br>整包未发送给下游"]
+    NonStreamMode --> NonStreamRetry["全生命周期支持透明重试<br>(最大 2 次退避重试)"]
+    NonStreamRetry -->|"重试成功"| ReturnJson["向客户端返回 200 OK 与 JSON Body<br>(客户端零错误感知)"]
+    NonStreamRetry -->|"重试耗尽"| ReturnError["向客户端返回最终 5xx/429 JSON"]
+
+    IsStream -->|"是 (流式 SSE)"| StreamMode["流式 SSE 模式"]
+    StreamMode --> DetectTTFT{"首个数据 Chunk<br>是否已发送给客户端？"}
+    
+    DetectTTFT -->|"未发送 (Pre-first-chunk)"| PreChunkRetry["首字前阶段：<br>HTTP 响应头与 Chunk 均未输出<br>支持完全静默透明重试 (最多 2 次)"]
+    PreChunkRetry -->|"重试成功"| StartStream["与新后端建联成功<br>正常输出 200 OK 并逐 Chunk 流式透传"]
+    PreChunkRetry -->|"重试耗尽"| ReturnStreamErr["返回 5xx/429 标准 JSON 错误"]
+
+    DetectTTFT -->|"已发送 (Mid-stream)"| InFlightError["首字后传输中阶段：<br>200 OK 与部分数据已刷入 TCP 管道"]
+    InFlightError --> BanRetry["【安全红线】坚决禁止从头重发！<br>(防止下游文本重复、JSON 错乱、无法回滚)"]
+    BanRetry --> GracefulAbort["流式优雅中止：<br>推送 SSE 错误事件帧或直接断开连接<br>审计标记 is_partial_failure = true"]
+
+    style NonStreamMode fill:#eff6ff,stroke:#3b82f6
+    style PreChunkRetry fill:#f0fdf4,stroke:#22c55e
+    style BanRetry fill:#fef2f2,stroke:#ef4444
+    style GracefulAbort fill:#fffbeb,stroke:#f59e0b
+```
+
+---
+
+### 8.3 自适应退避等待算法与 Full Jitter (Adaptive Backoff)
+
+为避免重试导致上游服务雪崩（重试风暴，Retry Storm），rs-gate 引入自适应退避等待算法：
+
+1. **优先遵循上游 `Retry-After` 头**：
+   - 当上游返回 `429 Too Many Requests` 或 `503 Service Unavailable` 时，检查响应头中是否存在 `Retry-After`：
+     - 若为整数秒（如 `Retry-After: 3`），则精确休眠 $3 \times 1000\text{ms}$（系统设定安全保护上限为 $10\text{s}$）；
+     - 若解析失败或未携带，则回退至带抖动的指数退避。
+2. **随机抖动指数退避公式 (Exponential Backoff with Full Jitter)**：
+   设重试次数为 $\text{attempt} \in \{1, 2\}$，基础等待时间 $\text{BaseInterval} = 500\text{ms}$，最大等待上限 $\text{MaxInterval} = 5000\text{ms}$：
+   $$\text{BackoffCap} = \min\left(\text{MaxInterval},\, \text{BaseInterval} \times 2^{\text{attempt}-1}\right)$$
+   $$\text{ActualWaitTime} = \text{UniformRandom}\left(0,\, \text{BackoffCap}\right)$$
+   通过随机均匀分布（Full Jitter），将并发重试请求在时间轴上均匀打散，彻底消除共振峰值。
+
+---
+
+### 8.4 多后端集群故障转移 (Failover) 与单后端退避策略
+
+在加权调度器（WLAC）的支持下，重试不仅是“原地重试”，更核心的是“智能故障转移”：
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client as 客户端 (OpenAI SDK)
+    participant Gateway as rs-gate 调度中继器
+    participant WLAC as WLAC 调度算法
+    participant NodeA as 后端实例 A (Primary)
+    participant NodeB as 后端实例 B (Secondary)
+    participant Audit as 异步审计流水
+
+    Client ->> Gateway: POST /v1/chat/completions (model: deepseek-r1)
+    Gateway ->> WLAC: 候选池 [NodeA, NodeB]，选出最优节点
+    WLAC -->> Gateway: 选中 NodeA (绑定 Guard_A, active_conns + 1)
+    
+    Gateway ->> NodeA: 原生直通转发 Body
+    Note over NodeA: NodeA 遭遇显存抖动 / 返回 503 队列满
+    NodeA -->> Gateway: HTTP 503 Service Unavailable
+    
+    Note over Gateway: 1. 立即 Drop Guard_A (NodeA active_conns - 1)<br>2. 累加 NodeA 连续失败数 consecutive_failures + 1<br>3. 判定符合重试条件 (attempt = 1 < 2)
+    
+    Gateway ->> Gateway: 计算退避时间 (Base=500ms + Jitter) -> tokio::time::sleep()
+    
+    Gateway ->> WLAC: 排除故障节点 NodeA，在剩余健康池 [NodeB] 重新选路
+    WLAC -->> Gateway: 选中 NodeB (绑定 Guard_B, active_conns + 1)
+    
+    Gateway ->> NodeB: 携带原请求 Body 重试直通转发
+    NodeB -->> Gateway: HTTP 200 OK (正常响应或首 chunk 流式输出)
+    
+    Gateway -->> Client: HTTP 200 OK (完全透明透传响应)
+    Note over Client: 客户端感知：请求耗时略微增加，但 100% 成功，无任何错误！
+    
+    Gateway ->> Audit: 记录审计流水 (retry_count = 1, failover_path = ["NodeA", "NodeB"], status = 200)
+```
+
+---
+
+### 8.5 资源生命周期、限流与配额一致性保证
+
+1. **RAII 连接计数生命周期**：
+   - 每次重试切换节点前，必须显式触发前一个节点的 `ActiveConnectionGuard` 的 `Drop`，使故障节点的 `active_connections` 立即自减并恢复真实水位；
+   - 绝不允许将旧 Guard 悬挂到重试结束，杜绝内存计数泄漏。
+2. **限流与配额绝对幂等**：
+   - **虚拟 Key RPM 限流**：在入站鉴权阶段仅消费 1 个令牌，内部重试过程中绝不重复扣减下游客户端的 RPM 令牌桶；
+   - **日/周 Token 配额**：配额以请求最终完成时上游返回的实际 Token Usage 统一结算 1 次，重试失败的上游废弃调用不计入下游客户端的扣费流水。
+3. **熔断状态机联动**：
+   - 每次上游重试失败，目标后端的 `consecutive_failures` 原子加 1。当单节点在短时间内连续失败达到熔断门限（默认 3 次），系统即刻将其标记为 `CircuitBroken` 熔断下线，并在巡检探活恢复前停止向其调度流量。
+
+---
+
+### 8.6 Rust 核心重试状态机实现规范
+
+```rust
+use std::sync::Arc;
+use std::time::Duration;
+use reqwest::{Client, Request, Response, StatusCode};
+use rand::Rng;
+use tracing::{info, warn};
+use crate::error::GatewayError;
+use crate::routing::instance::BackendInstance;
+use crate::proxy::guard::ActiveConnectionGuard;
+use crate::routing::scheduler::WlacScheduler;
+
+#[derive(Debug, Clone)]
+pub struct RetryConfig {
+    /// 默认最大重试次数 (2 次)
+    pub max_retries: usize,
+    /// 基础等待间隔毫秒 (默认 500ms)
+    pub base_interval_ms: u64,
+    /// 最大等待上限毫秒 (默认 5000ms)
+    pub max_interval_ms: u64,
+}
+
+impl Default for RetryConfig {
+    fn default() -> Self {
+        Self {
+            max_retries: 2,
+            base_interval_ms: 500,
+            max_interval_ms: 5000,
+        }
+    }
+}
+
+/// 判定上游错误或状态码是否允许重试
+pub fn is_retryable_status(status: StatusCode) -> bool {
+    status.is_server_error() || status == StatusCode::TOO_MANY_REQUESTS
+}
+
+/// 计算自适应退避等待时间 (包含 Retry-After 与 Full Jitter)
+pub fn calculate_backoff(
+    attempt: usize,
+    response: Option<&Response>,
+    config: &RetryConfig,
+) -> Duration {
+    // 优先检查上游是否携带合法 Retry-After 响应头
+    if let Some(resp) = response {
+        if let Some(retry_after) = resp.headers().get(reqwest::header::RETRY_AFTER) {
+            if let Ok(str_val) = retry_after.to_str() {
+                if let Ok(secs) = str_val.parse::<u64>() {
+                    let capped_secs = secs.min(10);
+                    return Duration::from_secs(capped_secs);
+                }
+            }
+        }
+    }
+
+    // Full Jitter 指数退避: Uniform(0, min(max_interval, base * 2^(attempt - 1)))
+    let exp_factor = 1u64.checked_shl((attempt.saturating_sub(1)) as u32).unwrap_or(16);
+    let cap = (config.base_interval_ms * exp_factor).min(config.max_interval_ms);
+    let mut rng = rand::thread_rng();
+    let jitter_ms = rng.gen_range(0..=cap);
+
+    Duration::from_millis(jitter_ms)
+}
+```
+
+---
+
+## 9. 交付验证标准与下一步衔接 (Verification & Roadmap)
+
+### 9.1 代理与调度设计验收标准 (Verification Checklist)
 
 - [x] **直通契约清晰**：覆盖 `/v1/chat/...`、`/v1/responses`、`/v1/completions`、`/v1/embeddings`、`/v1/rerank` 与 `/v1/models`，坚持零 AST 转换。
 - [x] **无除法加权调度**：落实基于加权最小活跃连接（WLAC）的无除法交叉乘法算法（$C_A \times W_B \text{ vs } C_B \times W_A$），包含同负荷平滑轮询仲裁。
@@ -514,7 +719,8 @@ graph TD
 - [x] **客户端 Abort 级联中断**：设计完整的端到端异步取消传导时序，杜绝 GPU 显存 KV Cache 浪费。
 - [x] **零缓冲 SSE 管道**：基于字节流实现边读边写透传，首字透传附加延迟 $\le 1\text{ms}$，提供轻量增量 Usage 解析器。
 - [x] **协议能力预探测**：定义精准区分 200/400 与 404/405 的探测逻辑与健康状态机转换规则。
+- [x] **上游静默重试与故障转移**：设计针对 5xx/429/网络超时/连接重置的默认 2 次重试与退避机制，严格界定流式首字前静默重试与首字后安全中止边界，保障 Guard 释放、限流配额幂等与审计轨迹追踪。
 
-### 8.2 下一步工作计划
+### 9.2 下一步工作计划
 本代理与调度设计规范定稿并提交后，将继续按照阶段二规划推进最后 1 篇专业子文档：
 👉 **编制阶段二第 4 步**：[`docs/02-design/04-limiting-and-audit.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/04-limiting-and-audit.md)（【流控与审计篇】虚拟 Key 鉴权脱敏、无锁原子令牌桶 RPM、并发在途门限、日/周双层配额阻断与自动重置、Tokio mpsc 异步落盘流水线）。

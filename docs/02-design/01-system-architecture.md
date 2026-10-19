@@ -108,7 +108,7 @@ graph TD
 | **1. 网络接入层** | 统一端口监听、TCP 握手管理、CIDR 网段白名单校验、协议头剥离与清洗、全局唯一 Trace ID 生成与注入。 | Axum 0.8, Tower Layer, `ipnet` CIDR Matcher | 网关入口耗时 $\le 0.1\text{ms}$，非法 IP 快速 403 拒止。 |
 | **2. 安全与流控层** | 虚拟 API Key 鉴权校验、无锁原子令牌桶（RPM）限流、在途长连接并发门限拦截、日/周两级 Token 配额准入与超额阻断。 | SHA-256 加盐 Hash 内存匹配、`AtomicU64` 令牌桶、`AtomicUsize` 并发计数、Chrono 时区计算 | 鉴权与流控判定延迟 $\le 0.2\text{ms}$；超额请求立即返回 429。 |
 | **3. 核心路由与调度层** | 维护逻辑模型到物理后端池的映射；周期性协议能力预探测；执行加权最小活跃长连接（WLAC）无除法交叉乘法选路；绑定 RAII 活跃连接守卫。 | 读写锁缓存 `Arc<RwLock<RouteTable>>`、`ActiveConnectionGuard` | 选路计算耗时 $\le 0.05\text{ms}$，无活跃长连接泄漏。 |
-| **4. 直通中继与流式引擎** | 原生多协议透明转发、Reqwest 长连接池复用、逐 Chunk 零缓冲流式透传、增量 Token Usage 提取、客户端 Abort 级联中断与资源释放。 | Reqwest Client、`tokio_stream`、`async-stream`、`bytes::Bytes` | 首字透传延迟 (TTFT Overhead) $\le 1\text{ms}$，内存零拷贝/零额外缓冲。 |
+| **4. 直通中继与流式引擎** | 原生多协议透明转发、Reqwest 长连接池复用、逐 Chunk 零缓冲流式透传、增量 Token Usage 提取、上游 5xx/429/超时静默重试与故障转移、客户端 Abort 级联中断与资源释放。 | Reqwest Client、`tokio_stream`、`async-stream`、`bytes::Bytes` | 首字透传延迟 (TTFT Overhead) $\le 1\text{ms}$，内存零拷贝/零额外缓冲，上游抖动客户端零感知。 |
 | **5. 异步审计管道** | 组装调用审计流水，通过 Tokio mpsc 有界通道投递，后台独立 Worker 触发批量事务刷盘，同步维护日/周累积配额，定期执行历史数据 TTL 清理。 | Tokio mpsc (有界 10,000)、SQLx SQLite WAL、批量提交 Worker | 代理热路径无锁非阻塞（投递耗时 $\le 0.02\text{ms}$），落盘抖动零扩散。 |
 | **6. 嵌入式控制台与门户** | 静态编译内嵌 Web SPA 资源、MIME 嗅探与缓存头注入、SPA 路由回退、用户自服务与管理员配置热更新 REST API、监控指标大盘分发。 | `rust-embed`、Axum ServeDir/ServeFile、JWT RBAC 鉴权、Prometheus `/metrics` | 单二进制自包含，无外部静态资源网络依赖。 |
 
@@ -156,12 +156,14 @@ sequenceDiagram
     end
     Sched ->> Guard: 创建 ActiveConnectionGuard (TargetBackend.active_conns.fetch_add(1))
 
-    Note over Sched, Upstream: 阶段 4: 直通中继与流式传输
+    Note over Sched, Upstream: 阶段 4: 直通中继、重试容错与流式传输
     Sched ->> Upstream: 原生直通转发 POST 请求 (注入托管后端凭证)
-    alt 上游连接失败或超时 (Connection Refused / Timeout)
-        Upstream -->> Sched: 返回网络错误或 504 Gateway Timeout
-        Sched ->> Guard: Guard 触发 Drop (active_conns.fetch_sub(1))
-        Sched -->> Client: 返回 502/504 错误响应
+    alt 上游发生 5xx / 429 / 连接超时 / 连接重置 (首字未发送前)
+        Upstream -->> Sched: 返回网络错误或 5xx/429
+        Note over Sched: 1. 触发 Drop Guard (原节点 active_conns - 1)<br>2. 判定 attempt < 2 (默认最多重试 2 次)<br>3. 自适应退避等待 (带抖动或遵循 Retry-After)<br>4. 重新选路 (Failover 至下一个健康节点)<br>5. 申领新 Guard 重试直通请求
+        opt 重试次数耗尽 (尝试 3 次均失败)
+            Sched -->> Client: 返回最终错误响应 (502/504/429 JSON)
+        end
     end
 
     Upstream -->> Stream: 返回 HTTP 200 OK (Content-Type: text/event-stream)
