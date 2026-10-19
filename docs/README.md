@@ -26,7 +26,12 @@ docs/
 │   ├── 02-admin-api.md   # 管理控制台后端 REST 契约
 │   └── 03-database-schema.md # SQLite 物理数据契约、字段字典与 DDL 规范
 ├── 04-tasks/        # 实施规划与验收：Milestone 拆解、任务清单与自动化验收测试标准 (AC)
-│   └── 01-tasks.md  # 阶段三任务拆解与验收标准清单
+│   ├── 01-roadmap.md                   # 工程实施总览、Milestone 依赖 DAG 图与门禁准则
+│   ├── 02-m1-foundation-and-storage.md # M1 作战卡: 基础骨架、配置管理与 SQLite WAL 引擎
+│   ├── 03-m2-proxy-and-wlac.md         # M2 作战卡: 原生直通代理、WLAC 调度与零缓冲 SSE 管道
+│   ├── 04-m3-security-and-audit.md     # M3 作战卡: 虚拟 Key 鉴权、日周配额流控与重试审计
+│   ├── 05-m4-web-console-portal.md     # M4 作战卡: Web 控制台、自服务门户与单二进制嵌入
+│   └── 06-m5-production-hardening.md   # M5 作战卡: 生产就绪、运维监控与综合发布加固
 ├── 05-adr/          # 架构决策记录 (ADR)：重大技术选型与权衡记录 (Architecture Decision Records)
 │   └── 01-xxx.md    # 具体架构决策
 └── 06-ops/          # 交付与运维：部署指南、配置模板、性能压测基准与监控指标
