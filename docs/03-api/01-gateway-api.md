@@ -1,10 +1,10 @@
 # rs-gate 网关代理 API 契约规范 (Gateway Proxy API Specification)
 
 - **文档编号**：`01-gateway-api.md`
-- **文档版本**：`v1.0.0`
+- **文档版本**：`v1.1.0`
 - **编制日期**：2026-10-19
-- **当前阶段**：阶段三：接口契约与任务分解 (第 1 步：代理协议契约篇)
-- **基准依赖**：[`docs/01-features/01-feature-matrix.md`](file:///home/fugui/rusts/rs-gate/docs/01-features/01-feature-matrix.md), [`docs/02-design/01-system-architecture.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/01-system-architecture.md), [`docs/02-design/03-routing-and-proxy.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/03-routing-and-proxy.md), [`docs/02-design/04-limiting-and-audit.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/04-limiting-and-audit.md)
+- **当前阶段**：阶段三：接口契约与任务分解 (第 1 步：代理协议契约篇 - 融入静默重试与容错)
+- **基准依赖**：[`docs/01-features/01-feature-matrix.md`](file:///home/fugui/rusts/rs-gate/docs/01-features/01-feature-matrix.md), [`docs/02-design/01-system-architecture.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/01-system-architecture.md), [`docs/02-design/02-storage-and-models.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/02-storage-and-models.md), [`docs/02-design/03-routing-and-proxy.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/03-routing-and-proxy.md), [`docs/02-design/04-limiting-and-audit.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/04-limiting-and-audit.md), [`docs/02-design/05-web-console.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/05-web-console.md)
 - **状态**：定稿待审 (Ready for Review)
 
 ---
@@ -23,9 +23,14 @@
 3. **真实凭据完全脱敏与物理后端隔离**：
    - 客户端使用的虚拟 API Key 绝不触碰物理后端。网关在内存中完成鉴权与配额检查后，向上游物理后端（vLLM、SGLang、TEI、第三方 API 提供商）发起请求时动态替换为后端托管真实凭据。
 4. **统一链路追踪与度量透传**：
-   - 全链路强制注入并透传 `x-request-id`；出站响应头实时回显日/周配额余量、重置时间及当前 Key 瞬时并发连接数。
+   - 全链路强制注入并透传 `x-request-id`；出站响应头实时回显日/周配额余量、重置时间、当前 Key 瞬时并发连接数及内部静默重试次数。
 5. **统一标准错误协议**：
    - 网关拦截的所有错误（鉴权失败、CIDR 拒绝、限流、配额耗尽、后端全熔断、超时等）均严格封装为标准 OpenAI 错误结构体 `{"error": {"message": "...", "type": "...", "code": ...}}`。
+6. **上游抖动静默重试与故障转移透明化 (Silent Upstream Resilience & Failover)**：
+   - 网关对上游瞬态异常（5xx、429、网络连接超时、连接重置）提供透明保护，默认支持最大 2 次退避重试（总计最多 3 次尝试）。
+   - 调度层优先执行故障转移（Failover）至候选健康后端池中的下一个最优节点；单节点时执行带随机抖动（Full Jitter）的自适应退避原地重试。
+   - 非流式请求全生命周期支持重试；SSE 流式请求在首字（First Chunk）输出前支持完全静默重试，首字输出后坚决禁止重发并安全优雅中止，杜绝下游界面乱码与数据重复。
+   - 内部重试保证客户端 RPM 与日/周配额结算的绝对幂等性，下游客户端享有“零错误感知（Zero-Error Perception）”的高可用 SLA 保障。
 
 ---
 
@@ -45,11 +50,12 @@
 
 ### 2.2 出站响应头规范 (Outbound Response Headers)
 
-无论是普通非流式 JSON 响应、SSE 流式建立首包响应，还是被网关拦截的 4xx/5xx 错误响应，rs-gate 均保证在出站 HTTP Header 中完整透传配额与度量状态：
+无论是普通非流式 JSON 响应、SSE 流式建立首包响应，还是被网关拦截的 4xx/5xx 错误响应，rs-gate 均保证在出站 HTTP Header 中完整透传配额、度量与重试状态：
 
 | 响应头字段 | 类型 | 示例值 | 业务含义与说明 |
 | :--- | :---: | :--- | :--- |
 | `x-request-id` | String | `c8b415a7-96a9-4b68-b762-d3a956321f00` | 本次请求在网关全生命周期与审计日志中的全局唯一追踪标识符。 |
+| `X-Gateway-Retry-Attempts` | Integer | `0` | 本次请求在网关内部经历的**静默重试次数**。`0` 表示首次转发即成功；若发生节点故障转移或退避重试则返回实际重试次数（如 `1` 或 `2`）。 |
 | `X-Quota-Daily-Limit` | Integer | `1000000` | 当前 API Key 配置的**日配额总上限**（单位：Token）。`0` 表示不限日额度。 |
 | `X-Quota-Daily-Remaining` | Integer | `742150` | 今日**剩余可用日配额**（单位：Token）。 |
 | `X-Quota-Daily-Reset` | Integer | `1729353599` | 今日配额重置的 Unix 时间戳（秒级），对齐为当日 `23:59:59`。 |
@@ -57,7 +63,7 @@
 | `X-Quota-Weekly-Remaining` | Integer | `3410200` | 本周**剩余可用周配额**（单位：Token）。 |
 | `X-Quota-Weekly-Reset` | Integer | `1729439999` | 本周配额重置的 Unix 时间戳（秒级），对齐为本周日 `23:59:59`。 |
 | `X-Concurrency-Current` | Integer | `3` | 当前 API Key 正在网关中执行的**实时在途活跃长连接并发数**。 |
-| `Retry-After` | Integer | `2` | 仅在触发 `429 Too Many Requests` (RPM 限流) 时返回，指示客户端等待多少秒后可重试。 |
+| `Retry-After` | Integer | `2` | 当触发 `429 Too Many Requests` 时返回，指示客户端等待秒数。包含两类场景：<br>1. 网关内部单 Key 令牌桶 RPM 超限时，按漏桶算法计算并返回；<br>2. 上游服务商返回 429 且网关自适应退避重试耗尽后，网关原样透传上游服务商指定的重试冷却秒数。 |
 
 ### 2.3 Hop-by-Hop 协议头清洗与真实凭据屏蔽机制
 
@@ -541,6 +547,7 @@ Authorization: Bearer sk-gate-9f8e7d6c5b4a312012345678abcdef01
 HTTP/1.1 200 OK
 Content-Type: application/json; charset=utf-8
 x-request-id: d0e1f2a3-b4c5-6e7f-8a9b-0c1d2e3f4a5b
+X-Gateway-Retry-Attempts: 0
 X-Quota-Daily-Limit: 1000000
 X-Quota-Daily-Remaining: 999610
 X-Quota-Daily-Reset: 1729353599
@@ -559,7 +566,10 @@ X-Concurrency-Current: 1
       "owned_by": "rs-gate",
       "permission": [],
       "root": "qwen-2.5-72b-instruct",
-      "parent": null
+      "parent": null,
+      "max_retries": 2,
+      "retry_interval_ms": 500,
+      "capabilities": ["chat", "responses", "completions"]
     },
     {
       "id": "deepseek-r1",
@@ -568,7 +578,10 @@ X-Concurrency-Current: 1
       "owned_by": "rs-gate",
       "permission": [],
       "root": "deepseek-r1",
-      "parent": null
+      "parent": null,
+      "max_retries": 2,
+      "retry_interval_ms": 500,
+      "capabilities": ["chat", "responses"]
     },
     {
       "id": "bge-m3",
@@ -577,7 +590,10 @@ X-Concurrency-Current: 1
       "owned_by": "rs-gate",
       "permission": [],
       "root": "bge-m3",
-      "parent": null
+      "parent": null,
+      "max_retries": 2,
+      "retry_interval_ms": 500,
+      "capabilities": ["embeddings"]
     },
     {
       "id": "bge-reranker-large",
@@ -586,11 +602,16 @@ X-Concurrency-Current: 1
       "owned_by": "rs-gate",
       "permission": [],
       "root": "bge-reranker-large",
-      "parent": null
+      "parent": null,
+      "max_retries": 2,
+      "retry_interval_ms": 500,
+      "capabilities": ["rerank"]
     }
   ]
 }
 ```
+
+> **字段说明**：返回对象完全遵循 OpenAI 标准结构体；针对企业内部网关场景，`data` 数组项额外扩展了 `max_retries`（上游静默重试上限）、`retry_interval_ms`（基础退避时间毫秒）以及 `capabilities`（后端探针所得协议能力徽章集合），便于前端自服务门户或集成客户端智能感知模型特性。
 
 ---
 
@@ -669,6 +690,43 @@ sequenceDiagram
 1. **审计元数据标记**：网关在生成 `AuditEvent` 时记录 `is_usage_missing = 1`；
 2. **轻量本地估算**：网关内置轻量级分词器（基于 `tiktoken-rs`），在后台任务中针对请求 `prompt` 与客户端实际接收的所有增量内容文本进行快速本地分词统计，补偿计算 `prompt_tokens` 与 `completion_tokens`，误差控制在 $\pm 5\%$ 以内，确保日/周配额扣减准确性。
 
+### 4.5 上游故障静默重试与流式首字安全边界契约 (Streaming Silent Retry & Safety Boundary)
+
+流式传输过程中，网关对上游偶发抖动的容错机制受**首字（First Chunk）透传状态**的严格物理边界约束：
+
+```mermaid
+graph TD
+    StreamReq["客户端流式请求 (stream: true)"] --> CheckFirstChunk{"首字 Chunk 是否已刷入<br>下游客户端 TCP 管道？"}
+
+    CheckFirstChunk -->|"未发送 (Pre-first-chunk)"| SilentRetry["首字前阶段：<br>HTTP 200 与数据帧均未输出<br>支持完全静默透明重试 (最多 2 次)"]
+    SilentRetry --> DropOldGuard["1. 立即释放故障后端 Guard<br>2. 累计连续失败计数<br>3. 自适应退避等待 (带 Full Jitter)"]
+    DropOldGuard --> FailoverWLAC["4. WLAC 故障转移选路 (排除故障节点)<br>5. 申领新 Guard 向新后端发起直通"]
+    FailoverWLAC -->|"重试成功"| NormalStream["向客户端输出 HTTP 200 并逐 Chunk 透传<br>(客户端感知：首字略有延迟，零错误)"]
+    FailoverWLAC -->|"重试耗尽"| StandardErrJSON["向客户端输出 5xx/429 标准 JSON 错误体"]
+
+    CheckFirstChunk -->|"已发送 (Mid-stream)"| BanRetryRule["首字后阶段：<br>HTTP 200 OK 与部分数据已到达客户端<br>【安全红线】严禁切换后端从头重试！"]
+    BanRetryRule --> GracefulAbort["流式优雅中止 (Graceful Abort)：<br>推送标准 SSE 错误事件帧或干净关闭连接<br>审计标记 is_stream=1, error_message"]
+
+    style SilentRetry fill:#f0fdf4,stroke:#22c55e
+    style BanRetryRule fill:#fef2f2,stroke:#ef4444
+    style GracefulAbort fill:#fffbeb,stroke:#f59e0b
+```
+
+1. **首 Chunk 输出前 (Pre-first-chunk / TTFT 阶段)**：
+   - 物理状态：网关尚未向下游客户端刷入 HTTP 200 OK 头与任何 SSE 数据帧。
+   - 容错契约：若上游后端发生网络连接超时、连接重置或返回 `500/502/503/504/429`，网关判定符合静默重试条件。网关立即 Drop 当前后端 `ActiveConnectionGuard`，触发自适应退避等待（遵循上游 `Retry-After` 或 Full Jitter 抖动计算），通过 WLAC 重新调度新健康实例（Failover），重新发起流式握手。客户端在此阶段完全无感知（仅首字响应时间 TTFT 略有延长）。
+2. **首 Chunk 输出后 (Mid-stream 传输中阶段)**：
+   - 物理状态：HTTP 200 OK 响应头及首批数据帧已刷入客户端 TCP 接收缓冲区，客户端 UI 界面打字机已在渲染。
+   - **【安全红线】坚决禁止从头重发**：一旦首 Chunk 离开网关，严禁切换后端重头发起请求，杜绝客户端界面文本重复、JSON 错乱和无法回滚的严重体验事故。
+   - 优雅中止契约：网关向客户端流中推送符合 SSE 规范的标准错误帧并结束流：
+     ```text
+     data: {"error":{"message":"Upstream server disconnected unexpectedly during streaming.","type":"upstream_error","code":"stream_interrupted"}}
+
+     data: [DONE]
+
+     ```
+   - 配额与审计契约：配额按中断前实际已生成的 Token（或本地估算值）进行唯一结算，不重复扣费；异步审计日志中记录 `is_stream = 1`, `retry_count`, `failover_path`, `error_message = "stream_interrupted"`。
+
 ---
 
 ## 5. 统一错误协议契约与状态码映射矩阵 (Unified Error Contract)
@@ -693,7 +751,7 @@ sequenceDiagram
 | `message` | String | 人类可读的错误明细说明，清晰阐明拒绝原因、超限类型或排查建议。 |
 | `type` | String | 错误分类类别。统一归类为：`invalid_request_error`、`authentication_error`、`permission_error`、`rate_limit_error`、`insufficient_quota`、`gateway_error`、`upstream_error`。 |
 | `param` | String \| null | 触发错误的具体入参字段名称（如 `model`、`stream` 等）。若为全局系统错误则固定为 `null`。 |
-| `code` | String \| Integer | 机器可读的精确错误码（如 `daily_quota_exceeded`、`no_healthy_backend`）。 |
+| `code` | String \| Integer | 机器可读的精确错误码（如 `daily_quota_exceeded`、`no_healthy_backend`、`upstream_retry_exhausted`）。 |
 
 ### 5.2 状态码与错误映射矩阵表 (Status Code Matrix)
 
@@ -703,14 +761,16 @@ sequenceDiagram
 | **`401`** | `authentication_error` | `invalid_api_key`<br>`api_key_expired`<br>`api_key_disabled` | 缺少 `Authorization` 请求头；虚拟 Key 在网关数据库中不存在；Key 已过期；或已被管理员禁用。 | 在自服务门户重新申领有效 API Key。 |
 | **`403`** | `permission_error` | `ip_forbidden`<br>`model_access_denied` | 客户端来源 IP 未落在配置的 CIDR 白名单内；或当前 Key 的模型白名单中未授权访问该逻辑模型。 | 联系管理员开通网络白名单或授予该模型访问权限。 |
 | **`404`** | `invalid_request_error` | `model_not_found` | 请求的逻辑模型在网关中不存在，或未配置任何后端映射。 | 调用 `GET /v1/models` 查看可用模型列表。 |
-| **`429`** | `rate_limit_error` | `rpm_limit_exceeded` | 触发单 Key 每分钟请求数（RPM）无锁令牌桶限流上限。响应头包含 `Retry-After`。 | 客户端按 `Retry-After` 等待后重试，或联系管理员调高 RPM。 |
+| **`429`** | `rate_limit_error` | `rpm_limit_exceeded` | 触发单 Key 每分钟请求数（RPM）无锁令牌桶限流上限。响应头包含网关计算的 `Retry-After`。 | 客户端按 `Retry-After` 等待后重试，或联系管理员调高 RPM。 |
 | **`429`** | `rate_limit_error` | `concurrency_limit_exceeded` | 当前 Key 正在执行的在途长连接并发数达到 `max_concurrency` 门限。 | 降低客户端并发调用数，排队消费。 |
+| **`429`** | `upstream_error` | `upstream_rate_limited` | 上游大模型服务商返回 429 且网关经自适应退避与故障转移重试（默认 2 次）后依然被限流。透传上游 `Retry-After`。 | 扩容上游账号 TPM/RPM 预算，或在模型后端池添加更多可用物理实例。 |
 | **`429`** | `insufficient_quota` | `daily_quota_exceeded` | 今日已消耗 Token 达到配置的 `daily_quota` 上限。 | 等待明日 00:00:00 自动重置，或联系管理员手动重置。 |
 | **`429`** | `insufficient_quota` | `weekly_quota_exceeded` | 本周已消耗 Token 达到配置的 `weekly_quota` 上限。 | 等待下周一 00:00:00 自动重置，或申请扩容周预算。 |
 | **`429`** | `insufficient_quota` | `insufficient_quota_reserve` | 流式请求准入时，当前剩余配额不足以满足最低预留门限（默认 500 Token）。 | 防止巨型生成透支，请及时充值或重置配额。 |
-| **`502`** | `upstream_error` | `bad_gateway` | 网关尝试连接目标物理后端失败（TCP Connection Refused / DNS 解析失败）。 | 检查底层后端实例存活状态与防火墙配置。 |
-| **`503`** | `gateway_error` | `no_healthy_backend` | 该逻辑模型下挂载的所有物理后端实例均处于异常或熔断状态（Circuit Broken）。 | 查看控制台后端健康看板，等待后端恢复或介入运维。 |
-| **`504`** | `upstream_error` | `gateway_timeout` | 后端首字响应超时（TTFT 超时），或流式中继传输过程中单 Chunk 读超时。 | 优化底层推理引擎 batching 策略或扩大超时阈值。 |
+| **`502`** | `upstream_error` | `bad_gateway`<br>`upstream_retry_exhausted` | 网关尝试连接目标物理后端失败（TCP Refused / DNS 失败），或上游返回 5xx 经自适应退避与多节点故障转移重试后全部耗尽。响应头包含 `X-Gateway-Retry-Attempts`。 | 检查底层后端实例存活状态、防火墙及健康探针看板。 |
+| **`503`** | `gateway_error` | `no_healthy_backend` | 该逻辑模型下挂载的所有物理后端实例均处于异常或熔断状态（Circuit Broken）。 | 查看控制台后端健康看板，等待后端探活自动恢复或人工介入运维。 |
+| **`503`** | `upstream_error` | `upstream_overloaded` | 上游物理实例队列显存排队溢出（503 Service Unavailable），经退避与故障转移重试后仍无空闲容量。 | 为该模型增加更多后端计算节点或优化调度权重。 |
+| **`504`** | `upstream_error` | `gateway_timeout` | 后端首字响应超时（TTFT 超时）或长连接中继超时，经重试后依然超时。 | 优化底层推理引擎 batching 策略或调大超时阈值配置。 |
 
 ### 5.3 典型错误场景响应报文范例
 
@@ -805,6 +865,30 @@ x-request-id: 2c3d4e5f-6a7b-8c9d-0e1f-2a3b4c5d6e7f
     "type": "gateway_error",
     "param": null,
     "code": "no_healthy_backend"
+  }
+}
+```
+
+#### 范例 6：502 Bad Gateway (上游重试耗尽)
+```http
+HTTP/1.1 502 Bad Gateway
+Content-Type: application/json; charset=utf-8
+x-request-id: 9a8b7c6d-5e4f-3a2b-1c0d-e1f2a3b4c5d6
+X-Gateway-Retry-Attempts: 2
+X-Quota-Daily-Limit: 1000000
+X-Quota-Daily-Remaining: 742150
+X-Quota-Daily-Reset: 1729353599
+X-Quota-Weekly-Limit: 5000000
+X-Quota-Weekly-Remaining: 3410200
+X-Quota-Weekly-Reset: 1729439999
+X-Concurrency-Current: 1
+
+{
+  "error": {
+    "message": "All upstream backends failed after 2 retry attempts across instances [node-vllm-01, node-vllm-02]. Upstream returned status 503 Service Unavailable.",
+    "type": "upstream_error",
+    "param": null,
+    "code": "upstream_retry_exhausted"
   }
 }
 ```
@@ -923,7 +1007,8 @@ print(response.content)
 ### 7.1 代理协议契约验收标准 (AC Checklist)
 
 - [x] **端点全覆盖**：精准定义 `/v1/chat/completions`、`/v1/responses`、`/v1/completions`、`/v1/embeddings`、`/v1/rerank` 与 `/v1/models` 共 6 个端点的请求字段与响应契约。
-- [x] **协议头完整规范**：定义入站请求头（`Authorization`、`x-request-id` 等）与出站响应头（`X-Quota-*`、`X-Concurrency-*`、`Retry-After` 等），明确 Hop-by-hop 清洗规则。
+- [x] **协议头完整规范**：定义入站请求头（`Authorization`、`x-request-id` 等）与出站响应头（`X-Gateway-Retry-Attempts`、`X-Quota-*`、`X-Concurrency-*`、`Retry-After` 等），明确 Hop-by-hop 清洗规则。
+- [x] **上游静默重试与故障转移容错**：规范针对 5xx/429/网络超时/连接重置的自适应退避与 Full Jitter 等待算法，严密界定流式首字前静默重试与首字后优雅中止边界，保证配额与限流绝对幂等。
 - [x] **SSE 流式与 Usage 契约**：明确逐 Chunk 透传结构、`include_usage` 尾部帧结构、`[DONE]` 终止帧，以及客户端 Abort 级联中断与 Usage 缺失本地估算方案。
 - [x] **统一错误契约**：统一 OpenAI 兼容错误结构，提供包含 400、401、403、404、429、502、503、504 的完整状态码映射矩阵与典型 JSON 报文示例。
 - [x] **SDK 兼容性验证**：提供 Python、TypeScript、cURL 与 LangChain 的完整接入代码范例。
