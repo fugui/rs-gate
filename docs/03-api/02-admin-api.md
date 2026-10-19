@@ -440,15 +440,71 @@ Web 控制台与自服务门户提供面向企业内部不同角色（超级管�
   *(注：`password` 可选填，不填表示保持原密码不变)*
 
 #### 4. 删除/停用用户：`DELETE /api/admin/users/:id`
-- **说明**：禁用该用户并级联失效其所有的 API Key（`superadmin` 账号具备防误删保护）。
+- **说明**：禁用该用户并级联失效其所有的 API Key（`superadmin` 账号具备防误删保护，不可删除自身）。
+- **路径参数**：`id` (String，目标用户 ID)
+- **响应体 (200 OK)**：
+  ```json
+  {
+    "code": 0,
+    "message": "User deactivated successfully and all associated API keys disabled",
+    "data": null
+  }
+  ```
 
 ---
 
 ### 4.2 全局虚拟 Key 管控与一键配额纠偏 (`/api/admin/keys`)
 
 #### 1. 全局 Key 监控检索：`GET /api/admin/keys`
-- **查询参数**：`user_id`、`keyword`（按 Key 名称或前缀检索）、`is_active`、`page`、`page_size`。
-- **响应体 (200 OK)**：返回全系统 Key 列表，包含关联的 `user_username`、`user_display_name` 及其实时日周进度。
+- **查询参数**：
+  - `user_id` (String, 可选)：按特定归属用户筛选；
+  - `keyword` (String, 可选)：按 Key 名称或脱敏前缀模糊检索；
+  - `is_active` (Integer, 可选)：按状态筛选 (`1` 启用，`0` 禁用)；
+  - `page` (Integer, 默认 1)；
+  - `page_size` (Integer, 默认 20)。
+- **响应体 (200 OK)**：
+  ```json
+  {
+    "code": 0,
+    "message": "success",
+    "data": {
+      "items": [
+        {
+          "id": "key-0192a3b4-c5d6",
+          "user_id": "usr-0192a3b4-5566",
+          "user_username": "developer_alice",
+          "user_display_name": "Alice Chen",
+          "name": "电商搜索推荐微服务",
+          "key_prefix": "sk-gate-7a8f***",
+          "daily_quota": 5000000,
+          "weekly_quota": 25000000,
+          "rpm_limit": 300,
+          "max_concurrency": 20,
+          "model_whitelist": ["deepseek-r1", "qwen-2.5-72b-instruct"],
+          "ip_whitelist": "10.0.0.0/8",
+          "is_active": 1,
+          "expires_at": null,
+          "created_at": 1729296000,
+          "updated_at": 1729350000,
+          "quota_status": {
+            "daily_used": 1250400,
+            "daily_remaining": 3749600,
+            "daily_percentage": 25.01,
+            "daily_reset_at": 1729353599,
+            "weekly_used": 6840000,
+            "weekly_remaining": 18160000,
+            "weekly_percentage": 27.36,
+            "weekly_reset_at": 1729439999
+          }
+        }
+      ],
+      "total": 12,
+      "page": 1,
+      "page_size": 20,
+      "has_more": false
+    }
+  }
+  ```
 
 #### 2. 管理员代建 Key：`POST /api/admin/keys`
 - **请求体 (Request Body)**：
@@ -467,9 +523,47 @@ Web 控制台与自服务门户提供面向企业内部不同角色（超级管�
 - **响应体 (201 Created)**：仅本次返回 `plaintext_key`。
 
 #### 3. 强制修改 Key 参数：`PUT /api/admin/keys/:id`
-- **请求体 (Request Body)**：可强制覆写 `daily_quota`, `weekly_quota`, `rpm_limit`, `max_concurrency`, `ip_whitelist`, `model_whitelist`, `is_active`。
+- **请求体 (Request Body)**：
+  ```json
+  {
+    "name": "重点项目核心链路 Key (配额调整)",
+    "daily_quota": 8000000,
+    "weekly_quota": 40000000,
+    "rpm_limit": 500,
+    "max_concurrency": 30,
+    "model_whitelist": ["deepseek-r1", "qwen-2.5-72b-instruct", "qwen-2.5-coder-32b"],
+    "ip_whitelist": "10.0.0.0/8",
+    "is_active": 1
+  }
+  ```
+- **响应体 (200 OK)**：
+  ```json
+  {
+    "code": 0,
+    "message": "Key configuration updated successfully",
+    "data": {
+      "id": "key-0192a3b4-c5d6",
+      "name": "重点项目核心链路 Key (配额调整)",
+      "daily_quota": 8000000,
+      "weekly_quota": 40000000,
+      "rpm_limit": 500,
+      "max_concurrency": 30,
+      "model_whitelist": ["deepseek-r1", "qwen-2.5-72b-instruct", "qwen-2.5-coder-32b"],
+      "is_active": 1,
+      "updated_at": 1729350250
+    }
+  }
+  ```
 
 #### 4. 强制吊销 Key：`DELETE /api/admin/keys/:id`
+- **响应体 (200 OK)**：
+  ```json
+  {
+    "code": 0,
+    "message": "Key permanently revoked",
+    "data": null
+  }
+  ```
 
 #### 5. 一键配额手动重置 (Quota Manual Reset)：`POST /api/admin/keys/:id/reset-quota`
 **接口说明**：解决突发业务压测或紧急保障导致日/周配额超限阻断问题。清零指定周期已用 Token，实时恢复通行。
@@ -570,9 +664,42 @@ Web 控制台与自服务门户提供面向企业内部不同角色（超级管�
 - **响应体 (201 Created)**：返回包含探活初值的后端对象。
 
 #### 3. 编辑物理后端：`PUT /api/admin/backends/:id`
-- **请求体 (Request Body)**：修改 `name`, `endpoint_url`, `upstream_api_key`, `weight`, `status`。
+- **请求体 (Request Body)**：
+  ```json
+  {
+    "name": "GPU-Cluster-Node-01 (vLLM-Updated)",
+    "endpoint_url": "http://10.0.1.10:8000",
+    "weight": 20,
+    "upstream_api_key": "new-vllm-secret-token",
+    "health_status": "healthy"
+  }
+  ```
+- **响应体 (200 OK)**：
+  ```json
+  {
+    "code": 0,
+    "message": "Backend updated successfully",
+    "data": {
+      "id": "be-vllm-01",
+      "name": "GPU-Cluster-Node-01 (vLLM-Updated)",
+      "endpoint_url": "http://10.0.1.10:8000",
+      "weight": 20,
+      "health_status": "healthy",
+      "updated_at": 1729350350
+    }
+  }
+  ```
 
 #### 4. 下线并移除后端：`DELETE /api/admin/backends/:id`
+- **说明**：从数据库及所有关联的模型后端池中解绑并移除目标后端。
+- **响应体 (200 OK)**：
+  ```json
+  {
+    "code": 0,
+    "message": "Backend server removed successfully and unmounted from all models",
+    "data": null
+  }
+  ```
 
 #### 5. 即时能力与健康探活：`POST /api/admin/backends/:id/probe`
 **接口说明**：管理员在界面点击“立即探测”，网关即刻向该后端并发执行协议探测套件，刷新 `capabilities_mask` 与健康状态机。
@@ -654,9 +781,51 @@ Web 控制台与自服务门户提供面向企业内部不同角色（超级管�
     "is_active": 1
   }
   ```
+- **响应体 (201 Created)**：
+  ```json
+  {
+    "code": 0,
+    "message": "Model created successfully",
+    "data": {
+      "id": "qwen-2.5-coder-32b",
+      "display_name": "Qwen 2.5 Coder 32B",
+      "description": "专精代码生成与审查模型",
+      "max_retries": 2,
+      "retry_interval_ms": 500,
+      "is_active": 1,
+      "created_at": 1729350400000,
+      "updated_at": 1729350400000
+    }
+  }
+  ```
 
 #### 3. 修改逻辑模型参数：`PUT /api/admin/models/:id`
-- **请求体 (Request Body)**：支持修改 `display_name`, `description`, `max_retries`, `retry_interval_ms`, `is_active`。
+- **请求体 (Request Body)**：
+  ```json
+  {
+    "display_name": "Qwen 2.5 Coder 32B (High Priority)",
+    "description": "专精代码生成与审查模型 (优化升级版)",
+    "max_retries": 3,
+    "retry_interval_ms": 300,
+    "is_active": 1
+  }
+  ```
+- **响应体 (200 OK)**：
+  ```json
+  {
+    "code": 0,
+    "message": "Model updated successfully and routing table reloaded",
+    "data": {
+      "id": "qwen-2.5-coder-32b",
+      "display_name": "Qwen 2.5 Coder 32B (High Priority)",
+      "description": "专精代码生成与审查模型 (优化升级版)",
+      "max_retries": 3,
+      "retry_interval_ms": 300,
+      "is_active": 1,
+      "updated_at": 1729350450000
+    }
+  }
+  ```
 
 #### 4. 绑定后端实例至模型并配置权重：`POST /api/admin/models/:id/backends`
 **接口说明**：为模型挂载物理后端，配置调度权重。操作成功后**自动触发内存路由表热重载**，WLAC 调度器即刻生效。
@@ -679,6 +848,14 @@ Web 控制台与自服务门户提供面向企业内部不同角色（超级管�
   ```
 
 #### 5. 从模型中解绑后端实例：`DELETE /api/admin/models/:id/backends/:backend_id`
+- **响应体 (200 OK)**：
+  ```json
+  {
+    "code": 0,
+    "message": "Backend unmounted from model successfully and routing table reloaded",
+    "data": null
+  }
+  ```
 
 ---
 
@@ -739,7 +916,30 @@ Web 控制台与自服务门户提供面向企业内部不同角色（超级管�
   ```
 
 #### 2. 审计流水流式导出：`GET /api/admin/audits/export`
-**接口说明**：按指定时间范围将筛选日志流式导出为 CSV 格式，响应头设置为 `Content-Type: text/csv` 与 `Content-Disposition: attachment; filename="rs-gate-audits-export.csv"`。
+**接口说明**：按指定时间范围与过滤条件将调用日志流式导出为 CSV 文本，供企业财务对账、部门内部成本核算与故障排查存档。
+
+- **查询参数 (Query Parameters)**：
+  - `start_time` (Integer, 必填)：导出起始毫秒时间戳；
+  - `end_time` (Integer, 必填)：导出截止毫秒时间戳；
+  - `user_id` (String, 可选)：按特定用户筛选；
+  - `key_id` (String, 可选)：按特定 Key 筛选；
+  - `model` (String, 可选)：按调用模型筛选；
+  - `http_status` (Integer, 可选)：按状态码筛选。
+
+- **响应格式 (200 OK 流式输出)**：
+  - **响应头**：
+    ```http
+    HTTP/1.1 200 OK
+    Content-Type: text/csv; charset=utf-8
+    Content-Disposition: attachment; filename="rs-gate-audits-20261019.csv"
+    Transfer-Encoding: chunked
+    ```
+  - **CSV 数据流内容示例**：
+    ```csv
+    id,trace_id,key_id,user_id,username,model,backend_id,protocol,client_ip,http_status,prompt_tokens,completion_tokens,total_tokens,request_duration_ms,ttft_ms,is_stream,retry_count,failover_path,error_message,created_at
+    aud-0192a3b4-8899,a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d,key-0192a3b4-c5d6,usr-0192a3b4-5566,developer_alice,deepseek-r1,be-sglang-02,chat,10.244.2.15,200,256,1024,1280,2340,310,1,1,"[""be-vllm-01 (503)"", ""be-sglang-02 (200)""]",,1729350400000
+    aud-0192a3b4-8900,b2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e,key-0192a3b4-c5d6,usr-0192a3b4-5566,developer_alice,qwen-2.5-72b-instruct,be-vllm-01,chat,10.244.2.15,200,128,512,640,1180,195,1,0,,,1729350410000
+    ```
 
 ---
 

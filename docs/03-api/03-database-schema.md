@@ -330,6 +330,21 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_trace_id
     ON audit_logs(trace_id);
 ```
 
+### 4.1 索引契约矩阵与预期加速场景 (Index Rationale Matrix)
+
+| 索引名称 | 目标数据表 | 索引列与排序规则 | 索引类型 | 预期加速场景与业务收益 |
+| :--- | :--- | :--- | :---: | :--- |
+| `idx_virtual_keys_key_hash` | `virtual_keys` | `key_hash ASC` | 唯一索引 (UNIQUE) | **网关入站鉴权第一道防线**：100% 覆盖 SHA-256 内存哈希点查，单次查询耗时 $\le 0.05\text{ms}$，支撑万级 QPS 极速准入。 |
+| `idx_virtual_keys_user_id` | `virtual_keys` | `user_id ASC, created_at DESC` | 复合索引 | **自服务门户“我的 Key”列表**：加速普通开发者拉取名下 Key 列表与最新创建时间排序，杜绝全表扫描。 |
+| `idx_quota_usages_lookup` | `quota_usages` | `key_id ASC, period_type ASC, period_start ASC` | 复合唯一索引 | **两级日周配额扣减与准入预检**：支持特定 Key 在指定自然日/周已用 Token 的毫秒级点查与 `UPSERT` 原子累加。 |
+| `idx_model_backends_model_active` | `model_backends` | `model_id ASC, is_active ASC, priority DESC` | 复合索引 | **路由选路表热重载**：快速加载指定逻辑模型下的所有可用物理后端实例池与优先级，支持 WLAC 内存路由表极速重构。 |
+| `idx_backend_servers_health` | `backend_servers` | `health_status ASC, is_active ASC` | 复合索引 | **后台巡检探活与故障报警**：快速筛选所有 `degraded` 或 `circuit_broken` 实例进行周期性探活复检。 |
+| `idx_audit_logs_created_at_desc` | `audit_logs` | `created_at DESC` | 覆盖排序单列索引 | **控制台全量审计按时间流水分页**：保障十万级日志流水的默认分页检索无需额外内存排序。 |
+| `idx_audit_logs_user_created` | `audit_logs` | `user_id ASC, created_at DESC` | 复合索引 | **开发者自服务排错下钻**：普通开发者仅查看自身 Key 产生的调用明细与报错原因，支持毫秒级筛选。 |
+| `idx_audit_logs_key_created` | `audit_logs` | `key_id ASC, created_at DESC` | 复合索引 | **单 Key 维度账单与消耗明细审计**：针对指定 API Key 展开调用历史与 Token 消耗流水。 |
+| `idx_audit_logs_model_created` | `audit_logs` | `model ASC, created_at DESC` | 复合索引 | **模型维度流量与 Token 消耗时序大盘**：支持按模型下钻过去 24h / 7d 的调用趋势图表渲染。 |
+| `idx_audit_logs_trace_id` | `audit_logs` | `trace_id ASC` | 单列精准索引 | **全链路 Trace 故障精确穿透**：根据出站响应头 `x-request-id` 毫秒级唯一定位单次请求的后端物理节点、重试次数及异常报错。 |
+
 ---
 
 ## 5. 初始种子数据与默认超管初始化契约 (Seed Data & Bootstrapping)
