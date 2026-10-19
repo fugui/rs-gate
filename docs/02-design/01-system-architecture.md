@@ -782,10 +782,12 @@ graph TD
     ArchDoc --> SubDoc1["阶段二子篇 1: 存储模型与迁移规范<br>(02-storage-and-models.md)"]
     ArchDoc --> SubDoc2["阶段二子篇 2: 调度与直通流式引擎<br>(03-routing-and-proxy.md)"]
     ArchDoc --> SubDoc3["阶段二子篇 3: 安全流控与异步审计<br>(04-limiting-and-audit.md)"]
+    ArchDoc --> SubDoc4["阶段二子篇 4: Web 控制台与自服务门户<br>(05-web-console.md)"]
 
     SubDoc1 --> Phase3["阶段三：接口契约与任务分解<br>(01-gateway-api.md & 01-tasks.md)"]
     SubDoc2 --> Phase3
     SubDoc3 --> Phase3
+    SubDoc4 --> Phase3
 
     Phase3 --> M1["Milestone 1: 基础骨架与 SQLite WAL 自初始化"]
 ```
@@ -802,5 +804,6 @@ graph TD
 ### 8.3 下一步工作计划
 在本文档检视通过后，依照规划依次推进专题子文档编制：
 1. **编制第 2 篇**：[`docs/02-design/02-storage-and-models.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/02-storage-and-models.md)（SQLite WAL 存储引擎、DDL 物理建模、复合索引与查询优化、声明式自迁移机制）；
-2. **编制第 3 篇**：[`docs/02-design/03-routing-and-proxy.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/03-routing-and-proxy.md)（加权最小活跃连接无除法算法、ActiveConnectionGuard 防泄漏、零缓冲 SSE 管道、Usage 增量提取、Abort 传导）；
-3. **编制第 4 篇**：[`docs/02-design/04-limiting-and-audit.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/04-limiting-and-audit.md)（虚拟 Key 鉴权脱敏、无锁原子令牌桶、日/周双层配额、Tokio mpsc 异步落盘与批量 Worker）。
+2. **编制第 3 篇**：[`docs/02-design/03-routing-and-proxy.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/03-routing-and-proxy.md)（加权最小活跃连接无除法算法、ActiveConnectionGuard 防泄漏、零缓冲 SSE 管道、Usage 增量提取、Abort 传导、上游静默重试容错）；
+3. **编制第 4 篇**：[`docs/02-design/04-limiting-and-audit.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/04-limiting-and-audit.md)（虚拟 Key 鉴权脱敏、无锁原子令牌桶、日/周双层配额、Tokio mpsc 异步落盘与批量 Worker）；
+4. **编制第 5 篇**：[`docs/02-design/05-web-console.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/05-web-console.md)（Web 控制台与自服务门户架构、双视角 RBAC 交互设计、协议徽章、日/周双进度条与单二进制构建流水线）。

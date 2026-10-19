@@ -18,7 +18,8 @@ docs/
 │   ├── 01-system-architecture.md # 系统总体架构、端到端数据流与模块分层
 │   ├── 02-storage-and-models.md  # SQLite 存储模型、DDL 与迁移机制
 │   ├── 03-routing-and-proxy.md   # 多协议直通、加权调度、RAII 防护与 SSE 引擎
-│   └── 04-limiting-and-audit.md  # 虚拟 Key 鉴权、日周配额与异步审计流水线
+│   ├── 04-limiting-and-audit.md  # 虚拟 Key 鉴权、日周配额与异步审计流水线
+│   └── 05-web-console.md         # Web 控制台与自服务门户架构、交互体系与单二进制内嵌
 ├── 03-api/          # 契约规范库：代理协议、控制台 REST API 与存储数据 DDL 契约
 │   ├── 01-gateway-api.md # 网关代理端点契约 (OpenAI/vLLM/SGLang 原生直通)
 │   ├── 02-admin-api.md   # 管理控制台后端 REST 契约

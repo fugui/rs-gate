@@ -445,11 +445,12 @@ impl AuditWorker {
 - [x] **配额幂等与重试审计追踪**：明确定义重试期间客户端虚拟 Key RPM 与日/周配额绝不重复扣减，审计流水完整记录重试次数与后端转移轨迹。
 
 ### 6.2 阶段二（系统架构设计）圆满收官与阶段三衔接
-至此，阶段二的 **4 篇核心系统架构设计文档已全部编制完成**：
+至此，阶段二的 **5 篇核心系统架构设计文档已全部编制完成**：
 1. [`docs/02-design/01-system-architecture.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/01-system-architecture.md)（【总览篇】系统总体分层架构与生命周期时序）
 2. [`docs/02-design/02-storage-and-models.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/02-storage-and-models.md)（【存储篇】SQLite WAL 存储模型、DDL 与自迁移）
-3. [`docs/02-design/03-routing-and-proxy.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/03-routing-and-proxy.md)（【代理篇】多协议直通、加权调度、RAII 防护与流式中继）
+3. [`docs/02-design/03-routing-and-proxy.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/03-routing-and-proxy.md)（【代理篇】多协议直通、加权调度、RAII 防护、流式中继与静默重试）
 4. [`docs/02-design/04-limiting-and-audit.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/04-limiting-and-audit.md)（【流控与审计篇】安全鉴权、日周配额与异步批量审计）
+5. [`docs/02-design/05-web-console.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/05-web-console.md)（【控制台篇】Web 管理控制台与自服务门户架构设计规范）
 
 下一步将按照 SDD 流水线正式迈入：
 👉 **「阶段三：接口契约与任务分解」**：
