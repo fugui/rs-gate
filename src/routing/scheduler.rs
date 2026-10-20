@@ -75,14 +75,17 @@ fn select_wlac_with_counter<'a>(
         let lhs = curr_active * best_weight;
         let rhs = best_active * curr_weight;
 
-        if lhs < rhs {
-            // 当前候选节点负载更轻
+        if lhs < rhs
+            || (lhs == rhs && curr_active == 0 && best_active == 0 && curr_weight > best_weight)
+        {
+            // 当前候选节点负载更轻，或在 0 连接时权重更高
             best_idx = i;
             best_active = curr_active;
             best_weight = curr_weight;
             tie_indices.clear();
             tie_indices.push(i);
-        } else if lhs == rhs {
+        } else if lhs == rhs && (curr_active != 0 || best_active != 0 || curr_weight == best_weight)
+        {
             // 负载比严格相同，加入平局候选集合
             tie_indices.push(i);
         }

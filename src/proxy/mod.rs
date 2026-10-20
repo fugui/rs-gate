@@ -1,6 +1,7 @@
 pub mod client;
 pub mod guard;
 pub mod handler;
+pub mod retry;
 pub mod stream;
 
 use crate::routing::{backend::BackendInstance, RouterTable};
@@ -47,6 +48,9 @@ pub async fn build_test_proxy_app_with_auth(
     let state = ProxyState {
         router_table,
         proxy_client: ProxyClient::new(),
+        key_store: None,
+        rate_limiter: None,
+        audit_logger: None,
     };
 
     build_proxy_router(state)

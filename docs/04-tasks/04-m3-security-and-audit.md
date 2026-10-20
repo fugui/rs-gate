@@ -8,7 +8,7 @@
   - 实施总纲：[`docs/04-tasks/01-roadmap.md`](file:///home/fugui/rusts/rs-gate/docs/04-tasks/01-roadmap.md)
   - 架构设计：[`docs/02-design/01-system-architecture.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/01-system-architecture.md), [`docs/02-design/04-limiting-and-audit.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/04-limiting-and-audit.md)
   - 接口契约：[`docs/03-api/01-gateway-api.md`](file:///home/fugui/rusts/rs-gate/docs/03-api/01-gateway-api.md), [`docs/03-api/03-database-schema.md`](file:///home/fugui/rusts/rs-gate/docs/03-api/03-database-schema.md)
-- **状态**：定稿待审 (Ready for Review)
+- **状态**：已落地交付 (Completed)
 
 ---
 
@@ -315,12 +315,12 @@ cargo test --test audit_batch_worker_test -- --nocapture
 ```
 
 **验收门禁通过准则**：
-- [ ] 鉴权非法 Key 返回 401，CIDR 越界返回 403，未授权模型返回 403；
-- [ ] 突发高频请求平滑触发 429 且带有合规 `Retry-After` 头；
-- [ ] 超额配额请求在网关入口准入门限被安全阻断，不产生物理上游流量；
-- [ ] 上游 503 场景下网关透明切换节点并输出 200，回显 `X-Gateway-Retry-Attempts: 1`；
-- [ ] 流式输出在首字后断连时杜绝二次生成；
-- [ ] 批量审计 Worker 在高并发投递下无数据丢失，配额表与日志表严格一致。
+- [x] 鉴权非法 Key 返回 401，CIDR 越界返回 403，未授权模型返回 403；
+- [x] 突发高频请求平滑触发 429 且带有合规 `Retry-After` 头；
+- [x] 超额配额请求在网关入口准入门限被安全阻断，不产生物理上游流量；
+- [x] 上游 503 场景下网关透明切换节点并输出 200，回显 `X-Gateway-Retry-Attempts: 1`；
+- [x] 流式输出在首字后断连时杜绝二次生成；
+- [x] 批量审计 Worker 在高并发投递下无数据丢失，配额表与日志表严格一致。
 
 ### 4.2 命令行黑盒验证手册 (CLI Blackbox Playbook)
 

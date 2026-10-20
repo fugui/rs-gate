@@ -97,7 +97,11 @@ pub fn create_abortable_sse_stream(
                 Ok(bytes) => yield Ok::<_, axum::Error>(bytes),
                 Err(err) => {
                     tracing::warn!("Upstream SSE stream reading error: {}", err);
-                    yield Err(axum::Error::new(err));
+                    let err_frame = format!(
+                        "event: error\ndata: {{\"error\":{{\"message\":\"Upstream SSE connection broken: {}\",\"type\":\"server_error\",\"code\":\"upstream_stream_error\"}}}}\n\ndata: [DONE]\n\n",
+                        err
+                    );
+                    yield Ok::<_, axum::Error>(axum::body::Bytes::from(err_frame));
                     break;
                 }
             }

@@ -245,6 +245,7 @@ rs-gate/
 | :---: | :--- | :--- | :---: | :--- | :---: |
 | **M1** | [`02-m1-foundation-and-storage.md`](file:///home/fugui/rusts/rs-gate/docs/04-tasks/02-m1-foundation-and-storage.md) | 基础骨架、配置管理、SQLite WAL 存储连接池、自迁移 DDL、默认超管、存活探针 | 无 | 幂等建表与索引、默认管理员注入、`/health/live` 响应 | **已完成 (Completed)** |
 | **M2** | [`03-m2-proxy-and-wlac.md`](file:///home/fugui/rusts/rs-gate/docs/04-tasks/03-m2-proxy-and-wlac.md) | 6 大原生直通端点、无除法 WLAC 调度、ActiveConnectionGuard、零缓冲 SSE、Usage 解析、Abort 级联 | M1 | WLAC 交叉乘法选路、逐 Chunk 实时透传、流中断长连接回收 | **已完成 (Completed)** |
-| **M3** | [`04-m3-security-and-audit.md`](file:///home/fugui/rusts/rs-gate/docs/04-tasks/04-m3-security-and-audit.md) | 虚拟 Key 鉴权、CIDR 白名单、无锁原子 CAS 令牌桶、日/周配额、静默重试与 Failover、批量审计 Worker | M1, M2 | 401/403/429 拦截、首字前重试、首字后优雅中止、批量落盘一致性 | 待实施 |
+| **M3** | [`04-m3-security-and-audit.md`](file:///home/fugui/rusts/rs-gate/docs/04-tasks/04-m3-security-and-audit.md) | 虚拟 Key 鉴权、CIDR 白名单、无锁原子 CAS 令牌桶、日/周配额、静默重试与 Failover、批量审计 Worker | M1, M2 | 401/403/429 拦截、首字前重试、首字后优雅中止、批量落盘一致性 | **已完成 (Completed)** |
+
 | **M4** | [`05-m4-web-console-portal.md`](file:///home/fugui/rusts/rs-gate/docs/04-tasks/05-m4-web-console-portal.md) | JWT RBAC 中间件、用户自服务 API、管理员治理 API、Vanilla CSS 控制台 SPA、`rust-embed` 单二进制 | M1, M3 | 角色权限强隔离、后端探活与热重载、CSV 流式导出、SPA 路由回退 | 待实施 |
 | **M5** | [`06-m5-production-hardening.md`](file:///home/fugui/rusts/rs-gate/docs/04-tasks/06-m5-production-hardening.md) | Prometheus `/metrics` 与就绪探针、审计 TTL 滚动清理、全链路端到端回归套件、musl 静态打包发布 | M1~M4 | 指标抓取准确性、过期日志物理清理、全链路 E2E 绿灯、产物体积 $\le 25\text{MB}$ | 待实施 |
