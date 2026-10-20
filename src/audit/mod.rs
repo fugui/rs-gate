@@ -1,10 +1,13 @@
+pub mod retention;
 pub mod worker;
+
+pub use retention::RetentionCleaner;
+pub use worker::AuditWorker;
 
 use crate::proxy::stream::TokenUsage;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
-use worker::AuditWorker;
 
 /// 全链路结构化审计事件
 #[derive(Debug, Clone, Serialize, Deserialize)]

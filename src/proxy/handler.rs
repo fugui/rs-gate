@@ -94,6 +94,7 @@ pub async fn forward_proxy_request(state: State<ProxyState>, req: Request<Body>)
         let raw_key = match auth_header {
             Some(val) if val.starts_with("Bearer ") => val["Bearer ".len()..].trim(),
             _ => {
+                crate::metrics::record_request("unknown", StatusCode::UNAUTHORIZED.as_u16(), false);
                 return (
                     StatusCode::UNAUTHORIZED,
                     Json(OpenAiErrorResponse::new(
@@ -110,6 +111,11 @@ pub async fn forward_proxy_request(state: State<ProxyState>, req: Request<Body>)
             Some(record) => {
                 // CIDR IP 白名单核验
                 if !record.is_ip_allowed(&client_ip) {
+                    crate::metrics::record_request(
+                        "unknown",
+                        StatusCode::FORBIDDEN.as_u16(),
+                        false,
+                    );
                     return (
                         StatusCode::FORBIDDEN,
                         Json(OpenAiErrorResponse::new(
@@ -126,6 +132,7 @@ pub async fn forward_proxy_request(state: State<ProxyState>, req: Request<Body>)
                 Some(record)
             }
             None => {
+                crate::metrics::record_request("unknown", StatusCode::UNAUTHORIZED.as_u16(), false);
                 return (
                     StatusCode::UNAUTHORIZED,
                     Json(OpenAiErrorResponse::new(
@@ -245,6 +252,15 @@ pub async fn forward_proxy_request(state: State<ProxyState>, req: Request<Body>)
         Some(list) if !list.is_empty() => list,
         _ => {
             tracing::warn!(model = %target_model, "No backend found for model");
+            crate::metrics::record_request(
+                &target_model,
+                StatusCode::SERVICE_UNAVAILABLE.as_u16(),
+                false,
+            );
+            crate::metrics::record_request_duration(
+                &target_model,
+                start_time.elapsed().as_secs_f64(),
+            );
             return (
                 StatusCode::SERVICE_UNAVAILABLE,
                 Json(OpenAiErrorResponse::new(
@@ -281,6 +297,15 @@ pub async fn forward_proxy_request(state: State<ProxyState>, req: Request<Body>)
             Some(b) => b.clone(),
             None => {
                 tracing::warn!(model = %target_model, "All backends are unhealthy");
+                crate::metrics::record_request(
+                    &target_model,
+                    StatusCode::SERVICE_UNAVAILABLE.as_u16(),
+                    false,
+                );
+                crate::metrics::record_request_duration(
+                    &target_model,
+                    start_time.elapsed().as_secs_f64(),
+                );
                 return (
                     StatusCode::SERVICE_UNAVAILABLE,
                     Json(OpenAiErrorResponse::new(
@@ -335,6 +360,7 @@ pub async fn forward_proxy_request(state: State<ProxyState>, req: Request<Body>)
                 // 检查是否为可静默重试状态 (5xx 或 429)
                 if is_retryable_status(status) && attempts < retry_config.max_retries {
                     attempts += 1;
+                    crate::metrics::record_retry(&format!("status_{}", status.as_u16()));
                     let backoff = calculate_backoff(attempts, Some(&res), &retry_config);
                     drop(guard);
                     tokio::time::sleep(backoff).await;
@@ -354,6 +380,7 @@ pub async fn forward_proxy_request(state: State<ProxyState>, req: Request<Body>)
 
                 if attempts < retry_config.max_retries {
                     attempts += 1;
+                    crate::metrics::record_retry("network_error");
                     let backoff = calculate_backoff(attempts, None, &retry_config);
                     drop(guard);
                     tokio::time::sleep(backoff).await;
@@ -369,6 +396,11 @@ pub async fn forward_proxy_request(state: State<ProxyState>, req: Request<Body>)
     let upstream_res = match upstream_res {
         Ok(res) => res,
         Err(err) => {
+            crate::metrics::record_request(&target_model, StatusCode::BAD_GATEWAY.as_u16(), false);
+            crate::metrics::record_request_duration(
+                &target_model,
+                start_time.elapsed().as_secs_f64(),
+            );
             let mut response = (
                 StatusCode::BAD_GATEWAY,
                 Json(OpenAiErrorResponse::new(
@@ -411,6 +443,8 @@ pub async fn forward_proxy_request(state: State<ProxyState>, req: Request<Body>)
     };
 
     if is_sse {
+        crate::metrics::record_request(&target_model, status.as_u16(), true);
+        crate::metrics::record_request_duration(&target_model, start_time.elapsed().as_secs_f64());
         let mut response = create_abortable_sse_stream(upstream_res, guard);
         inject_meta_headers(response.headers_mut(), &last_request_id, attempts);
 
@@ -488,7 +522,7 @@ pub async fn forward_proxy_request(state: State<ProxyState>, req: Request<Body>)
                 .map(|k| k.id.clone())
                 .unwrap_or_default(),
             user_id: authenticated_key.as_ref().map(|k| k.user_id.clone()),
-            model: target_model,
+            model: target_model.clone(),
             backend_id: last_selected_backend_id,
             protocol_str: protocol.to_string(),
             client_ip,
@@ -512,6 +546,9 @@ pub async fn forward_proxy_request(state: State<ProxyState>, req: Request<Body>)
         };
         let _ = logger.try_send(event);
     }
+
+    crate::metrics::record_request(&target_model, status.as_u16(), false);
+    crate::metrics::record_request_duration(&target_model, start_time.elapsed().as_secs_f64());
 
     match response_builder.body(Body::from(res_bytes)) {
         Ok(res) => res,

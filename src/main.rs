@@ -48,15 +48,26 @@ async fn main() -> anyhow::Result<()> {
         admin.role
     );
 
-    // 6. 组装 Axum Web 服务路由与存活探针
+    // 6. 启动历史审计日志滚动清理后台 Worker
+    let retention_cleaner = rs_gate::audit::retention::RetentionCleaner::new(
+        pool.clone(),
+        config.security.audit_retention_days,
+    );
+    tokio::spawn(retention_cleaner.start_background_worker());
+    tracing::info!(
+        retention_days = config.security.audit_retention_days,
+        "Audit log retention background worker started"
+    );
+
+    // 7. 组装 Axum Web 服务路由与存活探针
     let app = rs_gate::server::build_app(Some(pool)).await?;
 
-    // 7. 绑定网络监听与服务主循环
+    // 8. 绑定网络监听与服务主循环
     let bind_addr = format!("{}:{}", config.server.host, config.server.port);
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
     tracing::info!("rs-gate HTTP server listening on http://{}", bind_addr);
 
-    // 8. 挂载平滑停机信号 (SIGINT / SIGTERM)
+    // 9. 挂载平滑停机信号 (SIGINT / SIGTERM)
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await?;

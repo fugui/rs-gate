@@ -63,3 +63,10 @@ mime_guess = "2.0"
 [dev-dependencies]
 tempfile = "3.17"
 wiremock = "0.6"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

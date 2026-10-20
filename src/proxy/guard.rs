@@ -12,6 +12,7 @@ pub struct ActiveConnectionGuard {
 impl ActiveConnectionGuard {
     /// 包装已有活跃计数 (不重复递增)
     pub fn new(counter: Arc<AtomicUsize>) -> Self {
+        crate::metrics::inc_active_connections();
         Self {
             counter,
             backend_id: None,
@@ -22,6 +23,7 @@ impl ActiveConnectionGuard {
     pub fn acquire(counter: Arc<AtomicUsize>) -> Self {
         let prev = counter.fetch_add(1, Ordering::SeqCst);
         trace!(active_conns = prev + 1, "Active connection acquired");
+        crate::metrics::inc_active_connections();
         Self {
             counter,
             backend_id: None,
@@ -47,5 +49,6 @@ impl Drop for ActiveConnectionGuard {
             active_conns = prev.saturating_sub(1),
             "Active connection released via RAII Drop"
         );
+        crate::metrics::dec_active_connections();
     }
 }

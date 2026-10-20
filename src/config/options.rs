@@ -74,8 +74,23 @@ impl Default for DatabaseConfig {
     }
 }
 
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct SecurityConfig {
     #[serde(default)]
     pub default_admin_password: Option<String>,
+    #[serde(default = "default_audit_retention_days")]
+    pub audit_retention_days: u32,
+}
+
+fn default_audit_retention_days() -> u32 {
+    30
+}
+
+impl Default for SecurityConfig {
+    fn default() -> Self {
+        Self {
+            default_admin_password: None,
+            audit_retention_days: default_audit_retention_days(),
+        }
+    }
 }

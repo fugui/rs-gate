@@ -83,7 +83,7 @@ async fn health_ready_handler(
 async fn metrics_handler() -> (
     StatusCode,
     [(axum::http::HeaderName, &'static str); 1],
-    &'static str,
+    String,
 ) {
     (
         StatusCode::OK,
@@ -91,7 +91,7 @@ async fn metrics_handler() -> (
             axum::http::header::CONTENT_TYPE,
             "text/plain; version=0.0.4; charset=utf-8",
         )],
-        "# HELP rsgate_http_requests_total Total number of HTTP proxy requests processed\n# TYPE rsgate_http_requests_total counter\nrsgate_http_requests_total 0\n",
+        crate::metrics::export_metrics_text(),
     )
 }
 
@@ -195,15 +195,36 @@ pub async fn build_test_app_with_cluster(cluster_uris: Vec<String>) -> Router {
     };
     key_store.insert(valid_record);
 
+    let proxy_client = ProxyClient::new();
+    let rate_limiter = Arc::new(RateLimiterManager::new());
+
     let state = ProxyState {
-        router_table,
-        proxy_client: ProxyClient::new(),
-        key_store: Some(key_store),
-        rate_limiter: Some(Arc::new(RateLimiterManager::new())),
+        router_table: router_table.clone(),
+        proxy_client: proxy_client.clone(),
+        key_store: Some(key_store.clone()),
+        rate_limiter: Some(rate_limiter.clone()),
         audit_logger: None,
     };
 
-    crate::proxy::build_proxy_router(state).fallback(crate::admin::embedded::static_handler)
+    let app_state = AppState {
+        pool: None,
+        router_table,
+        proxy_client,
+        key_store: Some(key_store),
+        rate_limiter: Some(rate_limiter),
+        audit_logger: None,
+    };
+
+    let health_router = Router::new()
+        .route("/health/live", get(health_live_handler))
+        .route("/health/ready", get(health_ready_handler))
+        .route("/metrics", get(metrics_handler))
+        .with_state(app_state);
+
+    let proxy_router = crate::proxy::build_proxy_router(state);
+    health_router
+        .merge(proxy_router)
+        .fallback(crate::admin::embedded::static_handler)
 }
 
 async fn build_test_app_with_custom_key(
@@ -231,16 +252,35 @@ async fn build_test_app_with_custom_key(
 
     let router_table = Arc::new(RouterTable::new());
     let rate_limiter = Arc::new(RateLimiterManager::new());
+    let proxy_client = ProxyClient::new();
 
     let state = ProxyState {
+        router_table: router_table.clone(),
+        proxy_client: proxy_client.clone(),
+        key_store: Some(key_store.clone()),
+        rate_limiter: Some(rate_limiter.clone()),
+        audit_logger: None,
+    };
+
+    let app_state = AppState {
+        pool: None,
         router_table,
-        proxy_client: ProxyClient::new(),
+        proxy_client,
         key_store: Some(key_store),
         rate_limiter: Some(rate_limiter),
         audit_logger: None,
     };
 
-    crate::proxy::build_proxy_router(state).fallback(crate::admin::embedded::static_handler)
+    let health_router = Router::new()
+        .route("/health/live", get(health_live_handler))
+        .route("/health/ready", get(health_ready_handler))
+        .route("/metrics", get(metrics_handler))
+        .with_state(app_state);
+
+    let proxy_router = crate::proxy::build_proxy_router(state);
+    health_router
+        .merge(proxy_router)
+        .fallback(crate::admin::embedded::static_handler)
 }
 
 /// 快速构建管理控制台与自服务门户的集成测试应用实例 (挂载完整数据库与初始数据)

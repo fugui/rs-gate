@@ -15,7 +15,8 @@ pub fn load_config(custom_path: Option<&str>) -> anyhow::Result<AppConfig> {
         .set_default("database.url", "sqlite://data/rsgate.db?mode=rwc")?
         .set_default("database.max_connections", 32)?
         .set_default("database.min_connections", 4)?
-        .set_default("database.busy_timeout_ms", 5000)?;
+        .set_default("database.busy_timeout_ms", 5000)?
+        .set_default("security.audit_retention_days", 30)?;
 
     if let Some(path) = custom_path {
         builder = builder.add_source(config::File::with_name(path).required(true));
