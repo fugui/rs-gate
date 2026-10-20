@@ -8,7 +8,7 @@
   - 实施总纲：[`docs/04-tasks/01-roadmap.md`](file:///home/fugui/rusts/rs-gate/docs/04-tasks/01-roadmap.md)
   - 架构设计：[`docs/02-design/01-system-architecture.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/01-system-architecture.md), [`docs/02-design/03-routing-and-proxy.md`](file:///home/fugui/rusts/rs-gate/docs/02-design/03-routing-and-proxy.md)
   - 接口契约：[`docs/03-api/01-gateway-api.md`](file:///home/fugui/rusts/rs-gate/docs/03-api/01-gateway-api.md)
-- **状态**：就绪待实施 (Ready for Implementation)
+- **状态**：已完成 (Completed)
 
 ---
 
@@ -29,21 +29,21 @@
 rs-gate/
 ├── src/
 │   ├── routing/
-│   │   ├── mod.rs                  # [新增] 路由表管理与读写并发锁
-│   │   ├── backend.rs              # [新增] 物理后端节点实例定义与原子计数
-│   │   └── scheduler.rs            # [新增] WLAC 无除法交叉乘法调度器实现
+│   │   ├── mod.rs                  # [已落地交付] 路由表管理与读写并发锁
+│   │   ├── backend.rs              # [已落地交付] 物理后端节点实例定义与原子计数
+│   │   └── scheduler.rs            # [已落地交付] WLAC 无除法交叉乘法调度器实现
 │   └── proxy/
-│       ├── mod.rs                  # [新增] 代理路由挂载与分派
-│       ├── client.rs               # [新增] Reqwest 上游长连接池与凭据脱敏注入
-│       ├── guard.rs                # [新增] ActiveConnectionGuard (RAII Drop 计数器)
-│       ├── stream.rs               # [新增] 零缓冲 SSE 管道与增量 Usage 解析器
-│       └── handler.rs              # [新增] 6 大多协议直通端点处理函数
+│       ├── mod.rs                  # [已落地交付] 代理路由挂载与分派
+│       ├── client.rs               # [已落地交付] Reqwest 上游长连接池与凭据脱敏注入
+│       ├── guard.rs                # [已落地交付] ActiveConnectionGuard (RAII Drop 计数器)
+│       ├── stream.rs               # [已落地交付] 零缓冲 SSE 管道与增量 Usage 解析器
+│       └── handler.rs              # [已落地交付] 6 大多协议直通端点处理函数
 └── tests/
     ├── common/
-    │   └── mock_llm.rs             # [新增] Mock LLM 后端服务器 (wiremock 模拟器)
-    ├── wlac_scheduler_test.rs      # [新增] WLAC 交叉乘法调度与平局测试
-    ├── proxy_passthrough_test.rs   # [新增] 6 大端点非流式原生透传契约测试
-    └── sse_stream_test.rs          # [新增] 逐 Chunk 零缓冲、Usage 解析与客户端中断测试
+    │   └── mock_llm.rs             # [已落地交付] Mock LLM 后端服务器 (wiremock 模拟器)
+    ├── wlac_scheduler_test.rs      # [已落地交付] WLAC 交叉乘法调度与平局测试
+    ├── proxy_passthrough_test.rs   # [已落地交付] 6 大端点非流式原生透传契约测试
+    └── sse_stream_test.rs          # [已落地交付] 逐 Chunk 零缓冲、Usage 解析与客户端中断测试
 ```
 
 ---

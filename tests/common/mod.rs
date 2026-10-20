@@ -2,6 +2,8 @@ use sqlx::{sqlite::SqlitePoolOptions, SqlitePool};
 use std::path::PathBuf;
 use tempfile::TempDir;
 
+pub mod mock_llm;
+
 /// 隔离的 SQLite 测试环境夹具，在 Drop 时自动清理磁盘文件
 #[allow(dead_code)]
 pub struct TestDbHarness {
