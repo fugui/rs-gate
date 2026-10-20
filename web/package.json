@@ -1,0 +1,15 @@
+{
+  "name": "rs-gate-web-console",
+  "version": "0.1.0",
+  "description": "Vanilla CSS & Modern Native JS Web Console for rs-gate",
+  "scripts": {
+    "build": "mkdir -p dist && cp -r src/* dist/"
+  },
+  "keywords": [
+    "llm-gateway",
+    "web-console",
+    "portal"
+  ],
+  "author": "fugui",
+  "license": "Apache-2.0"
+}

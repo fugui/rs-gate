@@ -56,6 +56,9 @@ arc-swap = "1.7"
 futures-util = "0.3"
 tokio-util = "0.7"
 async-stream = "0.3"
+jsonwebtoken = "9.3"
+rust-embed = "8.13"
+mime_guess = "2.0"
 
 [dev-dependencies]
 tempfile = "3.17"
