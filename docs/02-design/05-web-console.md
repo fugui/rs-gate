@@ -108,107 +108,83 @@ graph LR
 
 ## 3. 前端工程架构与状态管理机制 (Frontend Architecture)
 
-### 3.1 目录组织规范 (`web/`)
+### 3.1 架构演进与技术栈选型决议
+为了兼顾**单二进制内嵌交付（$\le 25\text{MB}$）**的严苛红线与**长期复杂业务扩展（拓扑动态配置、实时大盘图表、复杂审计下钻）**的工程可维护性，前端控制台采用 **Vite + React 18 + TypeScript + Lucide 图标库** 现代声明式组件架构：
+1. **构建底座**：采用 Vite 作为极速构建工具，启用 Terser 深度代码压缩与 Rollup Tree-shaking，产物压缩后控制在 $\le 1\text{MB}$，完全满足内嵌预算；
+2. **声明式组件化与类型安全**：借助 React 18 声明式渲染与 TypeScript 强类型系统，彻底消除底层手动命令式 DOM 拼接（`createElement` / `appendChild`），将后端 REST API 契约 1:1 映射为前端 TS 类型，杜绝运行时字段错误；
+3. **零侵入单二进制打包**：构建输出直接指向 `web/dist/`，Rust 端的 `rust-embed` 与 `embedded.rs` 保持零修改，零感知无缝集成。
+
+### 3.2 目录组织规范 (`web/`)
 严格遵循单二进制前端工程规范，采用模块化高内聚设计：
 
 ```text
 web/
-├── index.html                      # 单页应用 SPA 挂载入口
-├── package.json                    # 构建依赖与脚本定义
+├── index.html                      # 单页应用 SPA 挂载入口 (#root)
+├── package.json                    # 依赖定义与构建脚本 (vite, react, typescript, lucide-react)
+├── tsconfig.json                   # TS 严格模式编译配置
+├── vite.config.ts                  # Vite 极速打包配置 (base: './', outDir: 'dist')
 ├── src/
-│   ├── app.js                      # 应用主入口，初始化路由与全局上下文
-│   ├── router.js                   # 轻量客户端路由引擎与 RBAC 导航守卫
-│   ├── store.js                    # 响应式全局状态树 (User, Token, Config, Toast)
-│   ├── styles/                     # CSS 核心设计系统
-│   │   ├── variables.css           # 设计令牌 (Tokens: 颜色, 间距, 圆角, 阴影)
-│   │   ├── reset.css               # 样式重置与排版规范
-│   │   ├── layout.css              # 页面双栏弹性网格框架 (Sidebar + Content)
-│   │   └── components.css          # 通用组件样式 (Card, Badge, Button, Table, Modal)
-│   ├── services/                   # 契约通信层
-│   │   ├── http.js                 # 统一 Fetch 封装 (带拦截器、401/429 处理)
-│   │   ├── auth_api.js             # 登录、注销、当前用户身份查询
-│   │   ├── portal_api.js           # 开发者自服务接口 (我的 Key、配额、代码示例)
-│   │   └── admin_api.js            # 管理员管控接口 (大盘、后端、模型、日志)
-│   ├── components/                 # 可复用原子/分子级组件
-│   │   ├── Navbar.js               # 顶部导航条 (用户头像、角色标、登出按钮)
-│   │   ├── Sidebar.js              # 左侧主菜单 (基于角色动态渲染可见项)
-│   │   ├── QuotaProgress.js        # 日/周配额双进度条组件
-│   │   ├── CapabilityBadge.js      # 协议能力徽章组组件
-│   │   ├── CodeBlock.js            # 带语法高亮与一键复制的代码卡片
-│   │   ├── Modal.js                # 通用拟态弹窗组件
-│   │   └── Toast.js                # 全局异步通知浮层 (Success / Error / Info)
-│   └── views/                      # 页面路由视图
-│       ├── auth/
-│       │   └── LoginView.js        # 登录界面
-│       ├── portal/                 # 开发者自服务页面组
-│       │   ├── KeysView.js         # 我的 API Key 管理与创建
-│       │   ├── UsageView.js        # 我的日/周配额与消耗分析
-│       │   ├── LogsView.js         # 个人调用历史下钻
-│       │   └── ModelsView.js       # 模型广场与接入指南
-│       └── admin/                  # 管理员管控页面组
-│           ├── DashboardView.js    # 监控大盘视图
-│           ├── BackendsView.js     # 后端实例与能力探活
-│           ├── ModelsView.js       # 模型集群与权重拓扑配置
-│           ├── KeyAdminView.js     # 全局 Key 管控与一键重置
-│           ├── AuditLogsView.js    # 全量调用审计与 CSV 导出
-│           └── UsersView.js        # 用户与权限管理
-└── dist/                           # 构建输出目录 (供 rust-embed 编译期直接内嵌)
+│   ├── main.tsx                    # React 挂载入口
+│   ├── App.tsx                     # 根组件：Auth/Toast Context 注入与路由分发
+│   ├── types/                      # TypeScript 契约定义层 (与 Rust DTO 1:1 镜像)
+│   │   ├── auth.ts                 # 认证令牌、用户身份与 RBAC 角色
+│   │   ├── gateway.ts              # 物理后端节点、逻辑模型、权重、配额模型
+│   │   ├── audit.ts                # 审计流水、统计大盘指标、错误码
+│   │   └── api.ts                  # 统一 API 响应格式与异常体
+│   ├── services/                   # 强类型 HTTP 通信服务层
+│   │   ├── client.ts               # Fetch 统一客户端 (JWT 注入、401/429 拦截)
+│   │   ├── authApi.ts              # 登录、注销、当前用户
+│   │   ├── portalApi.ts            # 自服务 API (Keys, Quotas, Code Snippets)
+│   │   └── adminApi.ts             # 管理员 API (Dashboard, Backends, Models, Keys, Logs, Users)
+│   ├── context/                    # 全局响应式状态
+│   │   ├── AuthContext.tsx         # 登录态、JWT 解析、权限守卫 Hook
+│   │   └── ToastContext.tsx        # 全局悬浮气泡提示通知
+│   ├── components/                 # 可复用声明式 UI 组件
+│   │   ├── layout/
+│   │   │   ├── Navbar.tsx          # 顶部导航（用户信息、视角标识、注销）
+│   │   │   └── Sidebar.tsx         # 侧边栏（基于角色动态过滤菜单）
+│   │   ├── common/
+│   │   │   ├── Card.tsx            # 拟态玻璃卡片容器
+│   │   │   ├── Modal.tsx           # 居中弹窗遮罩
+│   │   │   ├── Badge.tsx           # 状态徽章（协议徽章、健康徽章、HTTP 状态码）
+│   │   │   ├── QuotaBar.tsx        # 日/周配额自适应变色进度条
+│   │   │   └── CodeBlock.tsx       # 代码示例卡片与一键复制
+│   ├── views/                      # 路由业务视图
+│   │   ├── auth/
+│   │   │   └── LoginView.tsx       # 用户登录视图
+│   │   ├── portal/                 # 开发者自服务视图
+│   │   │   ├── KeysView.tsx        # 我的 API Keys 管理
+│   │   │   ├── UsageView.tsx       # 配额消耗分析
+│   │   │   ├── LogsView.tsx        # 个人审计流水下钻
+│   │   │   └── ModelsView.tsx      # 模型广场与接入指南 (Python/cURL/TS)
+│   │   └── admin/                  # 管理员运维管控大盘
+│   │       ├── DashboardView.tsx   # 集群监控大盘 (KPI卡片、轮询刷新)
+│   │       ├── BackendsView.tsx    # 物理后端实例与协议探针
+│   │       ├── ModelsView.tsx      # 模型集群拓扑与动态热配
+│   │       ├── KeyAdminView.tsx    # 全局 Key 治理与一键额度纠偏
+│   │       ├── AuditLogsView.tsx   # 全量审计流水与 CSV 导出
+│   │       └── UsersView.tsx       # 用户管理与权限分配
+│   └── styles/                     # CSS 设计系统 (传承原有 Design Tokens)
+│       ├── variables.css           # 基础色盘、字体与玻璃拟态参数
+│       ├── reset.css               # 样式重置
+│       ├── layout.css              # 栅格网格与布局骨架
+│       └── components.css          # 原生类名样式
+└── dist/                           # 构建输出目录 (供 rust-embed 嵌入)
 ```
 
 ---
 
-### 3.2 客户端 SPA 路由引擎与 RBAC 导航守卫
+### 3.3 客户端 SPA 路由引擎与 RBAC 导航守卫
 
-为实现极致轻量与零依赖，采用基于原生 `History API` 的微型路由分发器，并嵌入严格的前端路由鉴权守卫：
+为实现极致轻量与零依赖，采用基于原生 `History API` 的微型路由分发器，结合 React Hook 与声明式路由守卫：
 
-```javascript
-// web/src/router.js
-import { store } from './store.js';
-
-export const routes = [
-  { path: '/login', component: 'LoginView', public: true },
-  
-  // 开发者自服务路由 (角色要求: user | admin | superadmin)
-  { path: '/portal/keys', component: 'PortalKeysView', roles: ['user', 'admin', 'superadmin'] },
-  { path: '/portal/usage', component: 'PortalUsageView', roles: ['user', 'admin', 'superadmin'] },
-  { path: '/portal/logs', component: 'PortalLogsView', roles: ['user', 'admin', 'superadmin'] },
-  { path: '/portal/models', component: 'PortalModelsView', roles: ['user', 'admin', 'superadmin'] },
-
-  // 管理员管控专属路由 (角色要求: admin | superadmin)
-  { path: '/admin/dashboard', component: 'AdminDashboardView', roles: ['admin', 'superadmin'] },
-  { path: '/admin/backends', component: 'AdminBackendsView', roles: ['admin', 'superadmin'] },
-  { path: '/admin/models', component: 'AdminModelsView', roles: ['admin', 'superadmin'] },
-  { path: '/admin/keys', component: 'AdminKeyMgrView', roles: ['admin', 'superadmin'] },
-  { path: '/admin/logs', component: 'AdminAuditLogsView', roles: ['admin', 'superadmin'] },
-  { path: '/admin/users', component: 'AdminUsersView', roles: ['superadmin'] },
-];
-
-export class Router {
-  static async navigate(path) {
-    const route = routes.find(r => r.path === path) || routes.find(r => r.path === '/login');
-    const user = store.getUser();
-
-    // 1. 未登录拦截
-    if (!route.public && !user) {
-      window.history.pushState({}, '', '/login');
-      return Router.render('LoginView');
-    }
-
-    // 2. 越权阻断 (普通用户访问 /admin 路由)
-    if (route.roles && !route.roles.includes(user.role)) {
-      store.showToast('权限不足，无法访问管理页面', 'error');
-      window.history.pushState({}, '', '/portal/keys');
-      return Router.render('PortalKeysView');
-    }
-
-    window.history.pushState({}, '', path);
-    Router.render(route.component);
-  }
-
-  static render(componentName) {
-    // 动态渲染对应视图，更新侧边栏激活态
-    document.dispatchEvent(new CustomEvent('route-change', { detail: { componentName } }));
-  }
+```typescript
+// 路由定义与权限守卫契约示例
+export interface RouteConfig {
+  path: string;
+  component: React.ComponentType;
+  roles?: ('user' | 'admin' | 'superadmin')[];
+  public?: boolean;
 }
 ```
 

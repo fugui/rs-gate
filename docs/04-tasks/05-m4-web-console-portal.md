@@ -34,18 +34,19 @@ rs-gate/
 │       ├── admin_api.rs            # [新增] 管理员集群治理与统计 REST API 处理器
 │       └── embedded.rs             # [新增] rust-embed 静态资源处理与 SPA 回退
 ├── web/
-│   ├── package.json                # [新增] 前端工程配置与精简依赖
+│   ├── package.json                # [更新] 前端工程配置 (Vite + React 18 + TypeScript + Lucide-react)
+│   ├── tsconfig.json               # [新增] TypeScript 严格模式配置
+│   ├── vite.config.ts              # [新增] Vite 打包构建配置
+│   ├── index.html                  # [更新] 控制台 SPA 宿主 HTML (#root)
 │   ├── src/
-│   │   ├── index.html              # [新增] 控制台 SPA 宿主 HTML
-│   │   ├── styles/
-│   │   │   ├── tokens.css          # [新增] 色彩变量、排版与视觉设计令牌
-│   │   │   ├── components.css      # [新增] 按钮、徽章、表格、进度条组件样式
-│   │   │   └── layout.css          # [新增] 侧边栏导航与主视口网格布局
-│   │   └── scripts/
-│   │       ├── api.js              # [新增] 统一 Fetch REST 客户端
-│   │       ├── router.js           # [新增] 轻量原生 History 路由控制器
-│   │       ├── user_view.js        # [新增] 开发者自服务视图组件
-│   │       └── admin_view.js       # [新增] 管理员监控治理视图组件
+│   │   ├── main.tsx                # [新增] React 挂载入口
+│   │   ├── App.tsx                 # [新增] 顶层上下文注入与路由容器
+│   │   ├── types/                  # [新增] 强类型契约层 (auth, gateway, audit, api)
+│   │   ├── services/               # [新增] 类型安全 API 客户端 (client, portalApi, adminApi)
+│   │   ├── context/                # [新增] 全局响应式状态 (AuthContext, ToastContext)
+│   │   ├── components/             # [新增] 声明式组件库 (Navbar, Sidebar, Badge, QuotaBar, Modal, CodeBlock)
+│   │   ├── views/                  # [新增] 双视角业务页面 (Login, Portal 4大视图, Admin 6大视图)
+│   │   └── styles/                 # [传承] CSS 设计系统 (variables, reset, layout, components)
 │   └── dist/                       # [构建产物] 嵌入 Rust 二进制的前端静态目录
 └── tests/
     ├── admin_auth_rbac_test.rs     # [新增] JWT 鉴权、RBAC 越权拦截与数据隔离测试
@@ -246,12 +247,13 @@ async fn test_embedded_root_and_spa_history_fallback() {
   - `GET /api/admin/audits` 与 `GET /api/admin/audits/export`：流式异步导出 CSV；
   - `GET /api/admin/stats`：集群总 QPS、Token 消耗与成功率大盘统计。
 
-### 3.4 Task 4.4：Vanilla CSS 前端控制台 SPA 构建
-- **目标目录**：`web/src/`
+### 3.4 Task 4.4：Vite + React 18 + TypeScript 前端控制台 SPA 构建
+- **目标目录**：`web/`
 - **实现要点**：
-  - 核心设计系统（`styles/tokens.css`, `styles/components.css`）：采用现代深色/浅色自适应主题、统一圆角、极速响应式布局；
+  - 核心设计系统（`styles/variables.css`, `styles/components.css` 等）：继承现代暗黑主题、统一圆角、极速响应式布局；
+  - 采用 Vite + React 18 + TypeScript + Lucide-react 现代声明式组件架构；
   - 开发者门户与管理员门户双重视角自适应切换；
-  - 零外部沉重打包器与大型 JS 框架，采用标准原生 ES Module，产物极小（压缩后 $\le 1\text{MB}$）。
+  - 启用 Terser 深度压缩与 Tree-shaking，产物极小（压缩后 $\le 1\text{MB}$），单二进制总包严格满足 $\le 25\text{MB}$。
 
 ### 3.5 Task 4.5：`rust-embed` 单二进制内嵌与 SPA 路由回退
 - **目标文件**：`src/admin/embedded.rs`, `src/admin/mod.rs`
